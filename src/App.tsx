@@ -1,114 +1,59 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 
+/* ============================================================ TYPES ============================================================ */
+
+type Lang = 'en' | 'ru' | 'bg'
 type Gender = 'male' | 'female'
+type TravelerType = 'lean' | 'it' | 'prepared'
+type TravelType = 'city' | 'summer' | 'ski' | 'hiking' | 'business'
 
 type Category =
-  | 'Documents & Money'
-  | 'Electronics'
-  | 'Clothing'
-  | 'Outerwear'
-  | 'Footwear'
-  | 'Toiletries'
-  | 'Health & Comfort'
-  | 'Travel Extras'
+  | 'documents'
+  | 'electronics'
+  | 'clothing'
+  | 'outerwear'
+  | 'footwear'
+  | 'toiletries'
+  | 'health'
+  | 'extras'
+  | 'specialty'
 
 interface PackItem {
   id: string
-  name: string
   emoji: string
   category: Category
   /** Per-day multiplier for scaling items. 0 for fixed items. */
   basePerDay: number
   weightKg: number
   volumeL: number
-  /** Fixed items always default to a quantity of 1 regardless of trip length. */
+  /** Fixed items always default to a quantity of 1. */
   fixed: boolean
   gender?: Gender
-  /** Essential items trigger an under-packing warning when set to 0. */
+  /** Baseline essential flag (additional essentials come from traveler / travel type). */
   essential?: boolean
+  /** Show only on these travel types. */
+  onlyTravelTypes?: TravelType[]
 }
 
-const CATEGORY_ORDER: Category[] = [
-  'Documents & Money',
-  'Electronics',
-  'Clothing',
-  'Outerwear',
-  'Footwear',
-  'Toiletries',
-  'Health & Comfort',
-  'Travel Extras',
-]
-
-const CATEGORY_EMOJI: Record<Category, string> = {
-  'Documents & Money': '📑',
-  'Electronics': '🔌',
-  'Clothing': '👕',
-  'Outerwear': '🧥',
-  'Footwear': '👟',
-  'Toiletries': '🧼',
-  'Health & Comfort': '💊',
-  'Travel Extras': '🌍',
+interface ResolvedItem extends PackItem {
+  /** Final essential flag after traveler / travel type rules applied. */
+  essential: boolean
 }
 
-const ITEMS: PackItem[] = [
-  // Documents & Money
-  { id: 'passport',     name: 'Passport',              emoji: '📔', category: 'Documents & Money', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true, essential: true },
-  { id: 'wallet',       name: 'Wallet',                emoji: '👛', category: 'Documents & Money', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true, essential: true },
-  { id: 'id-card',      name: 'ID Card',               emoji: '🪪', category: 'Documents & Money', basePerDay: 0, weightKg: 0.01, volumeL: 0.02, fixed: true, essential: true },
-  { id: 'cash-cards',   name: 'Cash & Cards',          emoji: '💳', category: 'Documents & Money', basePerDay: 0, weightKg: 0.03, volumeL: 0.05, fixed: true, essential: true },
-  { id: 'insurance',    name: 'Travel Insurance Docs', emoji: '📄', category: 'Documents & Money', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true },
+interface AppState {
+  days: number
+  gender: Gender
+  travelerType: TravelerType
+  travelType: TravelType
+  overrides: Record<string, number>
+}
 
-  // Electronics
-  { id: 'phone',          name: 'Phone',          emoji: '📱', category: 'Electronics', basePerDay: 0, weightKg: 0.20, volumeL: 0.15, fixed: true, essential: true },
-  { id: 'charger',        name: 'Phone Charger',  emoji: '🔌', category: 'Electronics', basePerDay: 0, weightKg: 0.12, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'power-adapter',  name: 'Power Adapter',  emoji: '🔋', category: 'Electronics', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true },
-  { id: 'headphones',     name: 'Headphones',     emoji: '🎧', category: 'Electronics', basePerDay: 0, weightKg: 0.25, volumeL: 0.60, fixed: true },
-  { id: 'laptop',         name: 'Laptop',         emoji: '💻', category: 'Electronics', basePerDay: 0, weightKg: 1.50, volumeL: 2.00, fixed: true },
-  { id: 'laptop-charger', name: 'Laptop Charger', emoji: '⚡', category: 'Electronics', basePerDay: 0, weightKg: 0.40, volumeL: 0.50, fixed: true },
-  { id: 'camera',         name: 'Camera',         emoji: '📷', category: 'Electronics', basePerDay: 0, weightKg: 0.60, volumeL: 1.00, fixed: true },
-
-  // Clothing (scaling with days)
-  { id: 'tshirts',   name: 'T-Shirts',     emoji: '👕', category: 'Clothing', basePerDay: 1,    weightKg: 0.18, volumeL: 0.60, fixed: false, essential: true },
-  { id: 'underwear', name: 'Underwear',    emoji: '🩲', category: 'Clothing', basePerDay: 1,    weightKg: 0.05, volumeL: 0.15, fixed: false, essential: true },
-  { id: 'socks',     name: 'Socks',        emoji: '🧦', category: 'Clothing', basePerDay: 1,    weightKg: 0.06, volumeL: 0.20, fixed: false, essential: true },
-  { id: 'pants',     name: 'Pants / Jeans',emoji: '👖', category: 'Clothing', basePerDay: 0.34, weightKg: 0.55, volumeL: 1.20, fixed: false },
-  { id: 'pajamas',   name: 'Pajamas',      emoji: '🛌', category: 'Clothing', basePerDay: 0,    weightKg: 0.30, volumeL: 0.70, fixed: true },
-  { id: 'swimwear',  name: 'Swimwear',     emoji: '🩳', category: 'Clothing', basePerDay: 0,    weightKg: 0.15, volumeL: 0.30, fixed: true },
-
-  // Outerwear
-  { id: 'sweater',      name: 'Sweater / Hoodie', emoji: '🧶', category: 'Outerwear', basePerDay: 0, weightKg: 0.50, volumeL: 1.80, fixed: true },
-  { id: 'jacket',       name: 'Heavy Jacket',     emoji: '🧥', category: 'Outerwear', basePerDay: 0, weightKg: 0.90, volumeL: 3.50, fixed: true },
-  { id: 'rain-jacket',  name: 'Rain Jacket',      emoji: '☔', category: 'Outerwear', basePerDay: 0, weightKg: 0.30, volumeL: 0.80, fixed: true },
-
-  // Footwear
-  { id: 'sneakers',     name: 'Sneakers',           emoji: '👟', category: 'Footwear', basePerDay: 0, weightKg: 0.80, volumeL: 2.50, fixed: true, essential: true },
-  { id: 'sandals',      name: 'Sandals / Flip-flops', emoji: '🩴', category: 'Footwear', basePerDay: 0, weightKg: 0.30, volumeL: 1.00, fixed: true },
-  { id: 'dress-shoes',  name: 'Dress Shoes',        emoji: '👞', category: 'Footwear', basePerDay: 0, weightKg: 0.70, volumeL: 2.00, fixed: true },
-
-  // Toiletries
-  { id: 'toothbrush',  name: 'Toothbrush',           emoji: '🪥', category: 'Toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true, essential: true },
-  { id: 'toothpaste',  name: 'Toothpaste',           emoji: '🧴', category: 'Toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
-  { id: 'soap',        name: 'Soap & Body Wash',     emoji: '🧼', category: 'Toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
-  { id: 'shampoo',     name: 'Shampoo & Conditioner',emoji: '🧴', category: 'Toiletries', basePerDay: 0, weightKg: 0.20, volumeL: 0.25, fixed: true },
-  { id: 'deodorant',   name: 'Deodorant',            emoji: '🌬️', category: 'Toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
-  { id: 'sunscreen',   name: 'Sunscreen',            emoji: '🧴', category: 'Toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
-  { id: 'chapstick',   name: 'Chapstick',            emoji: '💋', category: 'Toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.04, fixed: true },
-  { id: 'shaving',     name: 'Shaving Kit',          emoji: '🪒', category: 'Toiletries', basePerDay: 0, weightKg: 0.35, volumeL: 0.80, fixed: true, gender: 'male' },
-  { id: 'makeup',      name: 'Makeup & Hygiene Kit', emoji: '💄', category: 'Toiletries', basePerDay: 0, weightKg: 0.55, volumeL: 1.20, fixed: true, gender: 'female' },
-
-  // Health & Comfort
-  { id: 'medications',  name: 'Medications',         emoji: '💊', category: 'Health & Comfort', basePerDay: 0, weightKg: 0.15, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'first-aid',    name: 'First Aid Kit',       emoji: '⛑️', category: 'Health & Comfort', basePerDay: 0, weightKg: 0.25, volumeL: 0.50, fixed: true },
-  { id: 'travel-pillow',name: 'Travel Pillow',       emoji: '💺', category: 'Health & Comfort', basePerDay: 0, weightKg: 0.30, volumeL: 2.00, fixed: true },
-  { id: 'sleep-mask',   name: 'Eye Mask & Earplugs', emoji: '😴', category: 'Health & Comfort', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true },
-
-  // Travel Extras
-  { id: 'water-bottle', name: 'Reusable Water Bottle', emoji: '💧', category: 'Travel Extras', basePerDay: 0, weightKg: 0.15, volumeL: 0.70, fixed: true },
-  { id: 'book',         name: 'Book / E-Reader',       emoji: '📖', category: 'Travel Extras', basePerDay: 0, weightKg: 0.30, volumeL: 0.50, fixed: true },
-  { id: 'sunglasses',   name: 'Sunglasses',            emoji: '🕶️', category: 'Travel Extras', basePerDay: 0, weightKg: 0.05, volumeL: 0.20, fixed: true },
-  { id: 'day-backpack', name: 'Day Backpack (folded)', emoji: '🎒', category: 'Travel Extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
-  { id: 'umbrella',     name: 'Compact Umbrella',     emoji: '☂️', category: 'Travel Extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
-]
+interface Snapshot {
+  id: string
+  name: string
+  savedAt: number
+  state: AppState
+}
 
 interface Warning {
   type: 'over' | 'under'
@@ -116,32 +61,720 @@ interface Warning {
 }
 
 interface Luggage {
-  name: string
+  nameKey: 'backpack' | 'carryOn' | 'suitcase'
   emoji: string
-  capacity: string
   tier: 1 | 2 | 3
 }
 
+/* ============================================================ ITEMS ============================================================ */
+
+const CATEGORY_ORDER: Category[] = [
+  'documents',
+  'electronics',
+  'clothing',
+  'outerwear',
+  'footwear',
+  'toiletries',
+  'health',
+  'extras',
+  'specialty',
+]
+
+const CATEGORY_EMOJI: Record<Category, string> = {
+  documents: '📑',
+  electronics: '🔌',
+  clothing: '👕',
+  outerwear: '🧥',
+  footwear: '👟',
+  toiletries: '🧼',
+  health: '💊',
+  extras: '🌍',
+  specialty: '⛰️',
+}
+
+const ITEMS: PackItem[] = [
+  // Documents & Money
+  { id: 'passport',     emoji: '📔', category: 'documents', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true, essential: true },
+  { id: 'wallet',       emoji: '👛', category: 'documents', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true, essential: true },
+  { id: 'id-card',      emoji: '🪪', category: 'documents', basePerDay: 0, weightKg: 0.01, volumeL: 0.02, fixed: true, essential: true },
+  { id: 'cash-cards',   emoji: '💳', category: 'documents', basePerDay: 0, weightKg: 0.03, volumeL: 0.05, fixed: true, essential: true },
+  { id: 'insurance',    emoji: '📄', category: 'documents', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true },
+
+  // Electronics
+  { id: 'phone',          emoji: '📱', category: 'electronics', basePerDay: 0, weightKg: 0.20, volumeL: 0.15, fixed: true, essential: true },
+  { id: 'charger',        emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.12, volumeL: 0.30, fixed: true, essential: true },
+  { id: 'power-adapter',  emoji: '🔋', category: 'electronics', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true },
+  { id: 'headphones',     emoji: '🎧', category: 'electronics', basePerDay: 0, weightKg: 0.25, volumeL: 0.60, fixed: true },
+  { id: 'laptop',         emoji: '💻', category: 'electronics', basePerDay: 0, weightKg: 1.50, volumeL: 2.00, fixed: true },
+  { id: 'laptop-charger', emoji: '⚡', category: 'electronics', basePerDay: 0, weightKg: 0.40, volumeL: 0.50, fixed: true },
+  { id: 'camera',         emoji: '📷', category: 'electronics', basePerDay: 0, weightKg: 0.60, volumeL: 1.00, fixed: true },
+
+  // Clothing (mostly scaling)
+  { id: 'tshirts',   emoji: '👕', category: 'clothing', basePerDay: 1,    weightKg: 0.18, volumeL: 0.60, fixed: false, essential: true },
+  { id: 'underwear', emoji: '🩲', category: 'clothing', basePerDay: 1,    weightKg: 0.05, volumeL: 0.15, fixed: false, essential: true },
+  { id: 'socks',     emoji: '🧦', category: 'clothing', basePerDay: 1,    weightKg: 0.06, volumeL: 0.20, fixed: false, essential: true },
+  { id: 'pants',     emoji: '👖', category: 'clothing', basePerDay: 0.34, weightKg: 0.55, volumeL: 1.20, fixed: false },
+  { id: 'pajamas',   emoji: '🛌', category: 'clothing', basePerDay: 0,    weightKg: 0.30, volumeL: 0.70, fixed: true },
+  { id: 'swimwear',  emoji: '🩳', category: 'clothing', basePerDay: 0,    weightKg: 0.15, volumeL: 0.30, fixed: true },
+
+  // Outerwear
+  { id: 'sweater',     emoji: '🧶', category: 'outerwear', basePerDay: 0, weightKg: 0.50, volumeL: 1.80, fixed: true },
+  { id: 'jacket',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.90, volumeL: 3.50, fixed: true },
+  { id: 'rain-jacket', emoji: '☔', category: 'outerwear', basePerDay: 0, weightKg: 0.30, volumeL: 0.80, fixed: true },
+
+  // Footwear
+  { id: 'sneakers',    emoji: '👟', category: 'footwear', basePerDay: 0, weightKg: 0.80, volumeL: 2.50, fixed: true, essential: true },
+  { id: 'sandals',     emoji: '🩴', category: 'footwear', basePerDay: 0, weightKg: 0.30, volumeL: 1.00, fixed: true },
+  { id: 'dress-shoes', emoji: '👞', category: 'footwear', basePerDay: 0, weightKg: 0.70, volumeL: 2.00, fixed: true },
+
+  // Toiletries
+  { id: 'toothbrush', emoji: '🪥', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true, essential: true },
+  { id: 'toothpaste', emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
+  { id: 'soap',       emoji: '🧼', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
+  { id: 'shampoo',    emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.20, volumeL: 0.25, fixed: true },
+  { id: 'deodorant',  emoji: '🌬️', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
+  { id: 'sunscreen',  emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
+  { id: 'chapstick',  emoji: '💋', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.04, fixed: true },
+  { id: 'shaving',    emoji: '🪒', category: 'toiletries', basePerDay: 0, weightKg: 0.35, volumeL: 0.80, fixed: true, gender: 'male' },
+  { id: 'makeup',     emoji: '💄', category: 'toiletries', basePerDay: 0, weightKg: 0.55, volumeL: 1.20, fixed: true, gender: 'female' },
+
+  // Health & Comfort
+  { id: 'medications',   emoji: '💊', category: 'health', basePerDay: 0, weightKg: 0.15, volumeL: 0.30, fixed: true, essential: true },
+  { id: 'first-aid',     emoji: '⛑️', category: 'health', basePerDay: 0, weightKg: 0.25, volumeL: 0.50, fixed: true },
+  { id: 'travel-pillow', emoji: '💺', category: 'health', basePerDay: 0, weightKg: 0.30, volumeL: 2.00, fixed: true },
+  { id: 'sleep-mask',    emoji: '😴', category: 'health', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true },
+
+  // Travel Extras
+  { id: 'water-bottle', emoji: '💧', category: 'extras', basePerDay: 0, weightKg: 0.15, volumeL: 0.70, fixed: true },
+  { id: 'book',         emoji: '📖', category: 'extras', basePerDay: 0, weightKg: 0.30, volumeL: 0.50, fixed: true },
+  { id: 'sunglasses',   emoji: '🕶️', category: 'extras', basePerDay: 0, weightKg: 0.05, volumeL: 0.20, fixed: true },
+  { id: 'day-backpack', emoji: '🎒', category: 'extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
+  { id: 'umbrella',     emoji: '☂️', category: 'extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
+
+  // Specialty Gear (gated by travel type)
+  { id: 'ski-gloves',    emoji: '🧤', category: 'specialty', basePerDay: 0, weightKg: 0.20, volumeL: 0.60, fixed: true, onlyTravelTypes: ['ski'] },
+  { id: 'ski-goggles',   emoji: '🥽', category: 'specialty', basePerDay: 0, weightKg: 0.15, volumeL: 0.40, fixed: true, onlyTravelTypes: ['ski'] },
+  { id: 'beanie',        emoji: '🎿', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['ski'] },
+  { id: 'hiking-boots',  emoji: '🥾', category: 'specialty', basePerDay: 0, weightKg: 1.10, volumeL: 3.00, fixed: true, onlyTravelTypes: ['hiking'] },
+  { id: 'beach-towel',   emoji: '🏖️', category: 'specialty', basePerDay: 0, weightKg: 0.40, volumeL: 1.40, fixed: true, onlyTravelTypes: ['summer'] },
+  { id: 'necktie',       emoji: '👔', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['business'] },
+]
+
+/* ============================================================ PROFILE RULES ============================================================ */
+
+const TRAVEL_HIDE: Record<TravelType, string[]> = {
+  city:     [],
+  summer:   ['jacket', 'sweater', 'rain-jacket', 'pajamas'],
+  ski:      ['swimwear', 'sandals', 'dress-shoes'],
+  hiking:   ['dress-shoes', 'swimwear', 'sandals'],
+  business: ['swimwear', 'sandals'],
+}
+
+const TRAVEL_ESSENTIALS: Record<TravelType, string[]> = {
+  city:     [],
+  summer:   ['sunscreen', 'sunglasses', 'sandals', 'swimwear', 'beach-towel'],
+  ski:      ['jacket', 'sweater', 'ski-gloves', 'ski-goggles', 'beanie'],
+  hiking:   ['water-bottle', 'day-backpack', 'sneakers', 'hiking-boots', 'sunscreen'],
+  business: ['dress-shoes', 'necktie', 'pants', 'laptop'],
+}
+
+const TRAVELER_HIDE: Record<TravelerType, string[]> = {
+  lean:     ['laptop', 'laptop-charger', 'camera', 'travel-pillow', 'day-backpack', 'umbrella', 'dress-shoes', 'sweater', 'pajamas', 'sleep-mask', 'first-aid', 'book'],
+  it:       [],
+  prepared: [],
+}
+
+const TRAVELER_ESSENTIALS: Record<TravelerType, string[]> = {
+  lean:     [],
+  it:       ['laptop', 'laptop-charger', 'headphones', 'power-adapter'],
+  prepared: ['first-aid', 'medications', 'day-backpack', 'umbrella', 'sleep-mask', 'insurance', 'water-bottle'],
+}
+
+function resolveItems(
+  gender: Gender,
+  traveler: TravelerType,
+  travelType: TravelType,
+): ResolvedItem[] {
+  const hideSet = new Set([...TRAVEL_HIDE[travelType], ...TRAVELER_HIDE[traveler]])
+  const essentialSet = new Set([...TRAVEL_ESSENTIALS[travelType], ...TRAVELER_ESSENTIALS[traveler]])
+  return ITEMS.flatMap((it) => {
+    if (it.gender && it.gender !== gender) return []
+    if (it.onlyTravelTypes && !it.onlyTravelTypes.includes(travelType)) return []
+    if (hideSet.has(it.id)) return []
+    return [{ ...it, essential: !!it.essential || essentialSet.has(it.id) } as ResolvedItem]
+  })
+}
+
+/* ============================================================ I18N ============================================================ */
+
+interface Translations {
+  tagline: string
+  subtitle: string
+  kpi: { items: string; weight: string; volume: string }
+  controls: {
+    tripLength: string
+    day: string
+    days: string
+    traveler: string
+    travelerHint: string
+    gender: string
+    genderHint: string
+    male: string
+    female: string
+    travelType: string
+    travelTypeHint: string
+  }
+  list: {
+    title: string
+    breakdown: (n: number, c: number, d: number) => string
+    pieces: (n: number) => string
+    fixedItem: string
+    suggested: string
+    perDay: string
+    essential: string
+    genderTag: { male: string; female: string }
+  }
+  telemetry: { title: string; volume: string; weight: string }
+  luggage: {
+    title: string
+    backpack: string
+    carryOn: string
+    suitcase: string
+    capacityUpTo: (n: number) => string
+    capacityBetween: (a: number, b: number) => string
+    capacityOver: (n: number) => string
+    barBackpack: string
+    barCarryOn: string
+    barSuitcase: string
+    tier: (n: number) => string
+  }
+  snapshots: {
+    title: string
+    placeholder: string
+    save: string
+    empty: string
+    load: string
+    delete: string
+    autoSaved: string
+    confirmDelete: string
+  }
+  warnings: {
+    overweight: (kg: string) => string
+    overvolume: (l: string) => string
+    overpacked: (emoji: string, name: string, qty: number, sugg: number) => string
+    fixedOver: (emoji: string, name: string, qty: number) => string
+    essential0: (emoji: string, name: string) => string
+    lowScaling: (emoji: string, name: string, qty: number, days: number, sugg: number) => string
+  }
+  categories: Record<Category, string>
+  travelers: Record<TravelerType, { name: string; tagline: string; emoji: string }>
+  travelTypes: Record<TravelType, { name: string; emoji: string }>
+  items: Record<string, string>
+  footer: string
+  language: string
+}
+
+const LANGS: { code: Lang; flag: string; name: string }[] = [
+  { code: 'en', flag: '🇬🇧', name: 'English' },
+  { code: 'ru', flag: '🇷🇺', name: 'Русский' },
+  { code: 'bg', flag: '🇧🇬', name: 'Български' },
+]
+
+const TRAVELER_EMOJI: Record<TravelerType, string> = { lean: '🪶', it: '💻', prepared: '🛡️' }
+const TRAVEL_TYPE_EMOJI: Record<TravelType, string> = {
+  city: '🏙️',
+  summer: '🏖️',
+  ski: '⛷️',
+  hiking: '🥾',
+  business: '💼',
+}
+
+const T_EN: Translations = {
+  tagline: 'Smart packing for any trip',
+  subtitle: 'Powered by math, not vibes. Set your trip, the list balances itself.',
+  kpi: { items: 'Items', weight: 'Weight', volume: 'Volume' },
+  controls: {
+    tripLength: 'Trip length',
+    day: 'day',
+    days: 'days',
+    traveler: 'Traveler profile',
+    travelerHint: 'tunes the essentials',
+    gender: 'Hygiene profile',
+    genderHint: 'shows the matching kit',
+    male: 'Male',
+    female: 'Female',
+    travelType: 'Trip type',
+    travelTypeHint: 'shapes the gear list',
+  },
+  list: {
+    title: 'Packing list',
+    breakdown: (n, c, d) => `${n} items · ${c} categories · ${d}d`,
+    pieces: (n) => (n === 1 ? '1 piece' : `${n} pieces`),
+    fixedItem: 'Fixed item',
+    suggested: 'suggested',
+    perDay: '/ day',
+    essential: 'essential',
+    genderTag: { male: 'male', female: 'female' },
+  },
+  telemetry: { title: 'Live telemetry', volume: 'Volume', weight: 'Weight' },
+  luggage: {
+    title: 'Recommended luggage',
+    backpack: 'Compact Backpack',
+    carryOn: 'Carry-on Trolley',
+    suitcase: 'Large Rolling Suitcase',
+    capacityUpTo: (n) => `up to ${n} L`,
+    capacityBetween: (a, b) => `${a} – ${b} L`,
+    capacityOver: (n) => `${n} L +`,
+    barBackpack: 'Backpack',
+    barCarryOn: 'Carry-on',
+    barSuitcase: 'Suitcase',
+    tier: (n) => `tier ${n}/3`,
+  },
+  snapshots: {
+    title: 'Saved trips',
+    placeholder: 'Name this trip (e.g. Sofia weekend)',
+    save: 'Save trip',
+    empty: 'No saved trips yet. Save the current setup to compare later.',
+    load: 'Load',
+    delete: 'Delete',
+    autoSaved: 'Auto-saved locally',
+    confirmDelete: 'Delete this saved trip?',
+  },
+  warnings: {
+    overweight: (kg) => `Total weight is ${kg} kg — that's over the standard 20 kg airline allowance.`,
+    overvolume: (l) => `Total volume is ${l} L — past carry-on size, consider trimming the list.`,
+    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} is more than double the suggested ${sugg}.`,
+    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} feels excessive for a single-item essential.`,
+    essential0: (emoji, name) => `${emoji} ${name} is at 0 — you can't leave home without it!`,
+    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: only ${qty} for a ${days}-day trip (suggested ${sugg}) — you'll run out.`,
+  },
+  categories: {
+    documents: 'Documents & Money',
+    electronics: 'Electronics',
+    clothing: 'Clothing',
+    outerwear: 'Outerwear',
+    footwear: 'Footwear',
+    toiletries: 'Toiletries',
+    health: 'Health & Comfort',
+    extras: 'Travel Extras',
+    specialty: 'Specialty Gear',
+  },
+  travelers: {
+    lean:     { name: 'Lean',     tagline: 'Bare minimum, fast moves',  emoji: TRAVELER_EMOJI.lean },
+    it:       { name: 'IT Pro',   tagline: 'Tech-heavy load-out',       emoji: TRAVELER_EMOJI.it },
+    prepared: { name: 'Prepared', tagline: 'Ready for anything',        emoji: TRAVELER_EMOJI.prepared },
+  },
+  travelTypes: {
+    city:     { name: 'City',           emoji: TRAVEL_TYPE_EMOJI.city },
+    summer:   { name: 'Beach / Summer', emoji: TRAVEL_TYPE_EMOJI.summer },
+    ski:      { name: 'Ski / Snow',     emoji: TRAVEL_TYPE_EMOJI.ski },
+    hiking:   { name: 'Hiking',         emoji: TRAVEL_TYPE_EMOJI.hiking },
+    business: { name: 'Business',       emoji: TRAVEL_TYPE_EMOJI.business },
+  },
+  items: {
+    passport: 'Passport', wallet: 'Wallet', 'id-card': 'ID Card',
+    'cash-cards': 'Cash & Cards', insurance: 'Travel Insurance Docs',
+    phone: 'Phone', charger: 'Phone Charger', 'power-adapter': 'Power Adapter',
+    headphones: 'Headphones', laptop: 'Laptop', 'laptop-charger': 'Laptop Charger',
+    camera: 'Camera',
+    tshirts: 'T-Shirts', underwear: 'Underwear', socks: 'Socks',
+    pants: 'Pants / Jeans', pajamas: 'Pajamas', swimwear: 'Swimwear',
+    sweater: 'Sweater / Hoodie', jacket: 'Heavy Jacket', 'rain-jacket': 'Rain Jacket',
+    sneakers: 'Sneakers', sandals: 'Sandals / Flip-flops', 'dress-shoes': 'Dress Shoes',
+    toothbrush: 'Toothbrush', toothpaste: 'Toothpaste',
+    soap: 'Soap & Body Wash', shampoo: 'Shampoo & Conditioner',
+    deodorant: 'Deodorant', sunscreen: 'Sunscreen', chapstick: 'Chapstick',
+    shaving: 'Shaving Kit', makeup: 'Makeup & Hygiene Kit',
+    medications: 'Medications', 'first-aid': 'First Aid Kit',
+    'travel-pillow': 'Travel Pillow', 'sleep-mask': 'Eye Mask & Earplugs',
+    'water-bottle': 'Reusable Water Bottle', book: 'Book / E-Reader',
+    sunglasses: 'Sunglasses', 'day-backpack': 'Day Backpack (folded)',
+    umbrella: 'Compact Umbrella',
+    'ski-gloves': 'Ski Gloves', 'ski-goggles': 'Ski Goggles', beanie: 'Beanie / Wool Hat',
+    'hiking-boots': 'Hiking Boots', 'beach-towel': 'Beach Towel', necktie: 'Necktie',
+  },
+  footer: 'PackMate · pack light, travel far.',
+  language: 'Language',
+}
+
+const T_RU: Translations = {
+  tagline: 'Умная упаковка для любой поездки',
+  subtitle: 'Расчёт, а не интуиция. Задаёте параметры — список считается сам.',
+  kpi: { items: 'Предметы', weight: 'Вес', volume: 'Объём' },
+  controls: {
+    tripLength: 'Длительность',
+    day: 'день',
+    days: 'дн.',
+    traveler: 'Профиль путешественника',
+    travelerHint: 'настраивает обязательное',
+    gender: 'Профиль гигиены',
+    genderHint: 'показывает нужный набор',
+    male: 'Мужской',
+    female: 'Женский',
+    travelType: 'Тип поездки',
+    travelTypeHint: 'формирует список снаряжения',
+  },
+  list: {
+    title: 'Список вещей',
+    breakdown: (n, c, d) => `${n} предм. · ${c} кат. · ${d} дн.`,
+    pieces: (n) => `${n} шт.`,
+    fixedItem: 'Фикс. предмет',
+    suggested: 'нужно',
+    perDay: '/ день',
+    essential: 'обязательно',
+    genderTag: { male: 'муж.', female: 'жен.' },
+  },
+  telemetry: { title: 'Текущие показатели', volume: 'Объём', weight: 'Вес' },
+  luggage: {
+    title: 'Рекомендуемый багаж',
+    backpack: 'Компактный рюкзак',
+    carryOn: 'Ручная кладь',
+    suitcase: 'Большой чемодан',
+    capacityUpTo: (n) => `до ${n} л`,
+    capacityBetween: (a, b) => `${a} – ${b} л`,
+    capacityOver: (n) => `${n} л +`,
+    barBackpack: 'Рюкзак',
+    barCarryOn: 'Ручная',
+    barSuitcase: 'Чемодан',
+    tier: (n) => `${n}/3`,
+  },
+  snapshots: {
+    title: 'Сохранённые поездки',
+    placeholder: 'Название поездки (напр., «Уикенд в Софии»)',
+    save: 'Сохранить',
+    empty: 'Пока ничего не сохранено. Сохраните текущий набор, чтобы вернуться к нему.',
+    load: 'Загрузить',
+    delete: 'Удалить',
+    autoSaved: 'Автосохранено локально',
+    confirmDelete: 'Удалить эту поездку?',
+  },
+  warnings: {
+    overweight: (kg) => `Общий вес ${kg} кг — это больше стандартного лимита 20 кг.`,
+    overvolume: (l) => `Общий объём ${l} л — это больше ручной клади, лучше что-то убрать.`,
+    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — это более чем вдвое от ${sugg} рекомендованных.`,
+    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — слишком много для одного предмета.`,
+    essential0: (emoji, name) => `${emoji} ${name} = 0 — без этого нельзя!`,
+    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: всего ${qty} на ${days} дн. (нужно ${sugg}) — не хватит.`,
+  },
+  categories: {
+    documents: 'Документы и деньги',
+    electronics: 'Электроника',
+    clothing: 'Одежда',
+    outerwear: 'Верхняя одежда',
+    footwear: 'Обувь',
+    toiletries: 'Гигиена',
+    health: 'Здоровье и комфорт',
+    extras: 'Дорожные мелочи',
+    specialty: 'Специальное снаряжение',
+  },
+  travelers: {
+    lean:     { name: 'Минимум',       tagline: 'Только самое нужное',     emoji: TRAVELER_EMOJI.lean },
+    it:       { name: 'IT-специалист', tagline: 'Полный технический набор', emoji: TRAVELER_EMOJI.it },
+    prepared: { name: 'Подготовленный',tagline: 'Готов ко всему',           emoji: TRAVELER_EMOJI.prepared },
+  },
+  travelTypes: {
+    city:     { name: 'Город',       emoji: TRAVEL_TYPE_EMOJI.city },
+    summer:   { name: 'Пляж / лето', emoji: TRAVEL_TYPE_EMOJI.summer },
+    ski:      { name: 'Лыжи / снег', emoji: TRAVEL_TYPE_EMOJI.ski },
+    hiking:   { name: 'Поход',       emoji: TRAVEL_TYPE_EMOJI.hiking },
+    business: { name: 'Бизнес',      emoji: TRAVEL_TYPE_EMOJI.business },
+  },
+  items: {
+    passport: 'Паспорт', wallet: 'Кошелёк', 'id-card': 'Удостоверение',
+    'cash-cards': 'Наличные и карты', insurance: 'Страховые документы',
+    phone: 'Телефон', charger: 'Зарядка для телефона', 'power-adapter': 'Сетевой адаптер',
+    headphones: 'Наушники', laptop: 'Ноутбук', 'laptop-charger': 'Зарядка для ноутбука',
+    camera: 'Камера',
+    tshirts: 'Футболки', underwear: 'Нижнее бельё', socks: 'Носки',
+    pants: 'Брюки / джинсы', pajamas: 'Пижама', swimwear: 'Купальник / плавки',
+    sweater: 'Свитер / худи', jacket: 'Тёплая куртка', 'rain-jacket': 'Дождевик',
+    sneakers: 'Кроссовки', sandals: 'Сандалии / шлёпанцы', 'dress-shoes': 'Туфли',
+    toothbrush: 'Зубная щётка', toothpaste: 'Зубная паста',
+    soap: 'Мыло / гель', shampoo: 'Шампунь и кондиционер',
+    deodorant: 'Дезодорант', sunscreen: 'Солнцезащитный крем', chapstick: 'Гигиеническая помада',
+    shaving: 'Бритвенный набор', makeup: 'Косметика и гигиена',
+    medications: 'Лекарства', 'first-aid': 'Аптечка',
+    'travel-pillow': 'Дорожная подушка', 'sleep-mask': 'Маска для сна и беруши',
+    'water-bottle': 'Бутылка для воды', book: 'Книга / читалка',
+    sunglasses: 'Солнечные очки', 'day-backpack': 'Складной рюкзак',
+    umbrella: 'Компактный зонт',
+    'ski-gloves': 'Лыжные перчатки', 'ski-goggles': 'Лыжные очки', beanie: 'Шапка',
+    'hiking-boots': 'Походные ботинки', 'beach-towel': 'Пляжное полотенце', necktie: 'Галстук',
+  },
+  footer: 'PackMate · меньше вещей — больше дорог.',
+  language: 'Язык',
+}
+
+const T_BG: Translations = {
+  tagline: 'Умно стягане за всяко пътуване',
+  subtitle: 'Сметката е наука, не интуиция. Задаваш дните — списъкът се сглобява сам.',
+  kpi: { items: 'Предмети', weight: 'Тегло', volume: 'Обем' },
+  controls: {
+    tripLength: 'Дължина на пътуването',
+    day: 'ден',
+    days: 'дни',
+    traveler: 'Профил на пътуващия',
+    travelerHint: 'настройва задължителното',
+    gender: 'Хигиенен профил',
+    genderHint: 'показва съответния комплект',
+    male: 'Мъжки',
+    female: 'Женски',
+    travelType: 'Вид пътуване',
+    travelTypeHint: 'оформя списъка с екипировка',
+  },
+  list: {
+    title: 'Списък за стягане',
+    breakdown: (n, c, d) => `${n} предмета · ${c} категории · ${d} дни`,
+    pieces: (n) => `${n} бр.`,
+    fixedItem: 'Фикс. предмет',
+    suggested: 'препоръчани',
+    perDay: '/ ден',
+    essential: 'задължително',
+    genderTag: { male: 'мъжки', female: 'женски' },
+  },
+  telemetry: { title: 'Текуща телеметрия', volume: 'Обем', weight: 'Тегло' },
+  luggage: {
+    title: 'Препоръчан багаж',
+    backpack: 'Компактна раница',
+    carryOn: 'Ръчен багаж',
+    suitcase: 'Голям куфар',
+    capacityUpTo: (n) => `до ${n} л`,
+    capacityBetween: (a, b) => `${a} – ${b} л`,
+    capacityOver: (n) => `${n} л +`,
+    barBackpack: 'Раница',
+    barCarryOn: 'Ръчен',
+    barSuitcase: 'Куфар',
+    tier: (n) => `ниво ${n}/3`,
+  },
+  snapshots: {
+    title: 'Запазени пътувания',
+    placeholder: 'Име на пътуването (напр. „Уикенд в София“)',
+    save: 'Запази',
+    empty: 'Все още няма запазени пътувания. Запази текущата конфигурация, за да я сравниш.',
+    load: 'Зареди',
+    delete: 'Изтрий',
+    autoSaved: 'Автоматично запазено локално',
+    confirmDelete: 'Да изтрия ли това пътуване?',
+  },
+  warnings: {
+    overweight: (kg) => `Общото тегло е ${kg} кг — над стандартния лимит от 20 кг.`,
+    overvolume: (l) => `Общият обем е ${l} л — над размера на ръчен багаж, орежи нещо.`,
+    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} е повече от двойно над препоръчаните ${sugg}.`,
+    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} е твърде много за един предмет.`,
+    essential0: (emoji, name) => `${emoji} ${name} е на 0 — не може без него!`,
+    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: само ${qty} за ${days} дни (нужни ${sugg}) — няма да стигнат.`,
+  },
+  categories: {
+    documents: 'Документи и пари',
+    electronics: 'Електроника',
+    clothing: 'Облекло',
+    outerwear: 'Връхни дрехи',
+    footwear: 'Обувки',
+    toiletries: 'Тоалетни принадлежности',
+    health: 'Здраве и комфорт',
+    extras: 'Дребни неща за път',
+    specialty: 'Специална екипировка',
+  },
+  travelers: {
+    lean:     { name: 'Минимално',         tagline: 'Само най-нужното',          emoji: TRAVELER_EMOJI.lean },
+    it:       { name: 'IT професионалист', tagline: 'Пълен техноарсенал',        emoji: TRAVELER_EMOJI.it },
+    prepared: { name: 'Подготвен',         tagline: 'Готов за всичко',           emoji: TRAVELER_EMOJI.prepared },
+  },
+  travelTypes: {
+    city:     { name: 'Градско',     emoji: TRAVEL_TYPE_EMOJI.city },
+    summer:   { name: 'Плаж / лято', emoji: TRAVEL_TYPE_EMOJI.summer },
+    ski:      { name: 'Ски / сняг',  emoji: TRAVEL_TYPE_EMOJI.ski },
+    hiking:   { name: 'Туризъм',     emoji: TRAVEL_TYPE_EMOJI.hiking },
+    business: { name: 'Бизнес',      emoji: TRAVEL_TYPE_EMOJI.business },
+  },
+  items: {
+    passport: 'Паспорт', wallet: 'Портфейл', 'id-card': 'Лична карта',
+    'cash-cards': 'Пари и карти', insurance: 'Застрахователни документи',
+    phone: 'Телефон', charger: 'Зарядно за телефон', 'power-adapter': 'Захранващ адаптер',
+    headphones: 'Слушалки', laptop: 'Лаптоп', 'laptop-charger': 'Зарядно за лаптоп',
+    camera: 'Фотоапарат',
+    tshirts: 'Тениски', underwear: 'Бельо', socks: 'Чорапи',
+    pants: 'Панталони / дънки', pajamas: 'Пижама', swimwear: 'Бански',
+    sweater: 'Пуловер / суичър', jacket: 'Топло яке', 'rain-jacket': 'Дъждобран',
+    sneakers: 'Маратонки', sandals: 'Сандали / джапанки', 'dress-shoes': 'Официални обувки',
+    toothbrush: 'Четка за зъби', toothpaste: 'Паста за зъби',
+    soap: 'Сапун / душ-гел', shampoo: 'Шампоан и балсам',
+    deodorant: 'Дезодорант', sunscreen: 'Слънцезащитен крем', chapstick: 'Балсам за устни',
+    shaving: 'Комплект за бръснене', makeup: 'Грим и хигиена',
+    medications: 'Лекарства', 'first-aid': 'Аптечка',
+    'travel-pillow': 'Възглавница за път', 'sleep-mask': 'Маска за очи и тапи',
+    'water-bottle': 'Бутилка за вода', book: 'Книга / е-четец',
+    sunglasses: 'Слънчеви очила', 'day-backpack': 'Сгъваема раница',
+    umbrella: 'Компактен чадър',
+    'ski-gloves': 'Ски ръкавици', 'ski-goggles': 'Ски очила', beanie: 'Шапка',
+    'hiking-boots': 'Туристически обувки', 'beach-towel': 'Плажна кърпа', necktie: 'Вратовръзка',
+  },
+  footer: 'PackMate · стягай леко, пътувай далече.',
+  language: 'Език',
+}
+
+const TRANSLATIONS: Record<Lang, Translations> = { en: T_EN, ru: T_RU, bg: T_BG }
+
+/* ============================================================ LANG DETECTION ============================================================ */
+
+const RUSSIAN_COUNTRIES = new Set(['ru', 'by', 'kz', 'kg', 'tj', 'tm', 'uz', 'az', 'am', 'ge', 'md', 'ua', 'ee', 'lv', 'lt'])
+const BG_TIMEZONES = new Set(['Europe/Sofia', 'Europe/Skopje'])
+const RU_TIMEZONES = new Set([
+  // Russia
+  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Europe/Volgograd',
+  'Europe/Astrakhan', 'Europe/Saratov', 'Europe/Ulyanovsk', 'Europe/Kirov',
+  'Asia/Yekaterinburg', 'Asia/Omsk', 'Asia/Novosibirsk', 'Asia/Novokuznetsk',
+  'Asia/Krasnoyarsk', 'Asia/Irkutsk', 'Asia/Chita', 'Asia/Yakutsk',
+  'Asia/Vladivostok', 'Asia/Khandyga', 'Asia/Sakhalin', 'Asia/Ust-Nera',
+  'Asia/Magadan', 'Asia/Srednekolymsk', 'Asia/Kamchatka', 'Asia/Anadyr',
+  'Asia/Tomsk', 'Asia/Barnaul',
+  // Other former-USSR (per user spec)
+  'Europe/Minsk',
+  'Europe/Kyiv', 'Europe/Uzhgorod', 'Europe/Zaporozhye', 'Europe/Simferopol',
+  'Europe/Chisinau',
+  'Europe/Tallinn', 'Europe/Riga', 'Europe/Vilnius',
+  'Asia/Almaty', 'Asia/Aqtobe', 'Asia/Aqtau', 'Asia/Atyrau', 'Asia/Oral', 'Asia/Qostanay', 'Asia/Qyzylorda',
+  'Asia/Bishkek', 'Asia/Dushanbe', 'Asia/Ashgabat',
+  'Asia/Tashkent', 'Asia/Samarkand',
+  'Asia/Baku', 'Asia/Yerevan', 'Asia/Tbilisi',
+])
+
+function guessLanguage(): Lang {
+  if (typeof window === 'undefined') return 'en'
+  try {
+    const stored = localStorage.getItem('packmate.lang')
+    if (stored === 'en' || stored === 'ru' || stored === 'bg') return stored
+  } catch { /* ignore */ }
+
+  const langs =
+    typeof navigator !== 'undefined' && navigator.languages && navigator.languages.length > 0
+      ? navigator.languages
+      : [typeof navigator !== 'undefined' ? navigator.language || 'en' : 'en']
+
+  for (const lang of langs) {
+    const tag = lang.toLowerCase()
+    if (tag.startsWith('bg') || tag.startsWith('mk')) return 'bg'
+    if (tag.startsWith('ru')) return 'ru'
+    const country = tag.split('-')[1]
+    if (country === 'bg' || country === 'mk') return 'bg'
+    if (country && RUSSIAN_COUNTRIES.has(country)) return 'ru'
+  }
+
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (BG_TIMEZONES.has(tz)) return 'bg'
+    if (RU_TIMEZONES.has(tz)) return 'ru'
+  } catch { /* ignore */ }
+
+  return 'en'
+}
+
+/* ============================================================ PERSISTENCE ============================================================ */
+
+const STATE_KEY = 'packmate.state.v2'
+const SNAPSHOTS_KEY = 'packmate.snapshots.v2'
+const LANG_KEY = 'packmate.lang'
+
+const DEFAULT_STATE: AppState = {
+  days: 7,
+  gender: 'male',
+  travelerType: 'prepared',
+  travelType: 'city',
+  overrides: {},
+}
+
+function loadState(): AppState {
+  if (typeof window === 'undefined') return DEFAULT_STATE
+  try {
+    const raw = localStorage.getItem(STATE_KEY)
+    if (!raw) return DEFAULT_STATE
+    const parsed = JSON.parse(raw)
+    return {
+      days: clamp(parsed?.days ?? 7, 1, 21),
+      gender: parsed?.gender === 'female' ? 'female' : 'male',
+      travelerType: ['lean', 'it', 'prepared'].includes(parsed?.travelerType) ? parsed.travelerType : 'prepared',
+      travelType: ['city', 'summer', 'ski', 'hiking', 'business'].includes(parsed?.travelType) ? parsed.travelType : 'city',
+      overrides: (parsed?.overrides && typeof parsed.overrides === 'object') ? parsed.overrides : {},
+    }
+  } catch {
+    return DEFAULT_STATE
+  }
+}
+
+function saveStateToStorage(state: AppState) {
+  try {
+    localStorage.setItem(STATE_KEY, JSON.stringify(state))
+  } catch { /* quota or disabled */ }
+}
+
+function loadSnapshots(): Snapshot[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(SNAPSHOTS_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveSnapshotsToStorage(snaps: Snapshot[]) {
+  try {
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snaps))
+  } catch { /* ignore */ }
+}
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v))
+}
+
+function uid(): string {
+  return (
+    Date.now().toString(36) +
+    Math.random().toString(36).slice(2, 8)
+  )
+}
+
+/* ============================================================ COMPONENT ============================================================ */
+
 function App() {
-  const [days, setDays] = useState(7)
-  const [gender, setGender] = useState<Gender>('male')
-  const [overrides, setOverrides] = useState<Record<string, number>>({})
+  const [lang, setLang] = useState<Lang>(() => guessLanguage())
+  const [days, setDays] = useState<number>(() => loadState().days)
+  const [gender, setGender] = useState<Gender>(() => loadState().gender)
+  const [travelerType, setTravelerType] = useState<TravelerType>(() => loadState().travelerType)
+  const [travelType, setTravelType] = useState<TravelType>(() => loadState().travelType)
+  const [overrides, setOverrides] = useState<Record<string, number>>(() => loadState().overrides)
+  const [snapshots, setSnapshots] = useState<Snapshot[]>(() => loadSnapshots())
+  const [snapshotName, setSnapshotName] = useState('')
+
+  const t = TRANSLATIONS[lang]
+
+  // Persist UI state continuously.
+  useEffect(() => {
+    saveStateToStorage({ days, gender, travelerType, travelType, overrides })
+  }, [days, gender, travelerType, travelType, overrides])
+
+  useEffect(() => {
+    try { localStorage.setItem(LANG_KEY, lang) } catch { /* ignore */ }
+    document.documentElement.lang = lang
+  }, [lang])
 
   const activeItems = useMemo(
-    () => ITEMS.filter((it) => !it.gender || it.gender === gender),
-    [gender],
+    () => resolveItems(gender, travelerType, travelType),
+    [gender, travelerType, travelType],
   )
 
-  const defaultQty = (item: PackItem) =>
+  const defaultQty = (item: ResolvedItem) =>
     item.fixed ? 1 : Math.max(1, Math.ceil(item.basePerDay * days))
 
-  const getQty = (item: PackItem) =>
+  const getQty = (item: ResolvedItem) =>
     overrides[item.id] ?? defaultQty(item)
 
-  const setQty = (item: PackItem, qty: number) =>
+  const setQty = (item: ResolvedItem, qty: number) =>
     setOverrides((prev) => ({ ...prev, [item.id]: Math.max(0, qty) }))
 
-  const resetItem = (item: PackItem) =>
+  const resetItem = (item: ResolvedItem) =>
     setOverrides((prev) => {
       const next = { ...prev }
       delete next[item.id]
@@ -149,9 +782,7 @@ function App() {
     })
 
   const { totalWeight, totalVolume, totalItems } = useMemo(() => {
-    let w = 0
-    let v = 0
-    let n = 0
+    let w = 0, v = 0, n = 0
     for (const it of activeItems) {
       const q = getQty(it)
       w += q * it.weightKg
@@ -163,76 +794,101 @@ function App() {
   }, [activeItems, overrides, days])
 
   const luggage: Luggage = useMemo(() => {
-    if (totalVolume <= 25) return { name: 'Compact Backpack',      emoji: '🎒', capacity: 'up to 25 L', tier: 1 }
-    if (totalVolume <= 45) return { name: 'Carry-on Trolley',      emoji: '🧳', capacity: '25 – 45 L',  tier: 2 }
-    return                       { name: 'Large Rolling Suitcase', emoji: '🧰', capacity: '45 L +',     tier: 3 }
+    if (totalVolume <= 25) return { nameKey: 'backpack', emoji: '🎒', tier: 1 }
+    if (totalVolume <= 45) return { nameKey: 'carryOn',  emoji: '🧳', tier: 2 }
+    return                     { nameKey: 'suitcase', emoji: '🧰', tier: 3 }
   }, [totalVolume])
 
   const warnings: Warning[] = useMemo(() => {
     const w: Warning[] = []
-    if (totalWeight > 20) {
-      w.push({
-        type: 'over',
-        msg: `Total weight is ${totalWeight.toFixed(1)} kg — that's over the standard 20 kg airline allowance.`,
-      })
-    }
-    if (totalVolume > 60) {
-      w.push({
-        type: 'over',
-        msg: `Total volume is ${totalVolume.toFixed(1)} L — you're well past carry-on size, consider trimming the list.`,
-      })
-    }
+    if (totalWeight > 20) w.push({ type: 'over', msg: t.warnings.overweight(totalWeight.toFixed(1)) })
+    if (totalVolume > 60) w.push({ type: 'over', msg: t.warnings.overvolume(totalVolume.toFixed(1)) })
     for (const it of activeItems) {
       const def = defaultQty(it)
       const qty = getQty(it)
-      if (!it.fixed && def > 0 && qty > def * 2) {
-        w.push({
-          type: 'over',
-          msg: `${it.emoji} ${it.name}: packing ${qty} is more than double the suggested ${def}.`,
-        })
-      }
-      if (it.fixed && qty > 3) {
-        w.push({
-          type: 'over',
-          msg: `${it.emoji} ${it.name}: ${qty} feels excessive for a single-item essential.`,
-        })
-      }
-      if (it.essential && qty === 0) {
-        w.push({
-          type: 'under',
-          msg: `${it.emoji} ${it.name} is at 0 — you can't leave home without it!`,
-        })
-      }
-      if (!it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2)) {
-        w.push({
-          type: 'under',
-          msg: `${it.emoji} ${it.name}: only ${qty} for a ${days}-day trip (suggested ${def}) — you'll run out.`,
-        })
-      }
+      const name = t.items[it.id] ?? it.id
+      if (!it.fixed && def > 0 && qty > def * 2) w.push({ type: 'over', msg: t.warnings.overpacked(it.emoji, name, qty, def) })
+      if (it.fixed && qty > 3) w.push({ type: 'over', msg: t.warnings.fixedOver(it.emoji, name, qty) })
+      if (it.essential && qty === 0) w.push({ type: 'under', msg: t.warnings.essential0(it.emoji, name) })
+      if (!it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2))
+        w.push({ type: 'under', msg: t.warnings.lowScaling(it.emoji, name, qty, days, def) })
     }
     return w
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days, totalWeight, totalVolume])
+  }, [activeItems, overrides, days, totalWeight, totalVolume, lang])
 
   const volumePct = Math.min(100, (totalVolume / 70) * 100)
   const weightPct = Math.min(100, (totalWeight / 25) * 100)
+
+  const usedCategoriesCount = useMemo(
+    () => CATEGORY_ORDER.filter((c) => activeItems.some((i) => i.category === c)).length,
+    [activeItems],
+  )
+
+  /* -------------------- snapshot handlers -------------------- */
+
+  function saveSnapshot() {
+    const name = snapshotName.trim() || autoSnapshotName()
+    const snap: Snapshot = {
+      id: uid(),
+      name,
+      savedAt: Date.now(),
+      state: { days, gender, travelerType, travelType, overrides },
+    }
+    const next = [snap, ...snapshots].slice(0, 20)
+    setSnapshots(next)
+    saveSnapshotsToStorage(next)
+    setSnapshotName('')
+  }
+
+  function autoSnapshotName(): string {
+    const tt = t.travelTypes[travelType].name
+    const tr = t.travelers[travelerType].name
+    return `${tt} · ${tr} · ${days}${lang === 'en' ? 'd' : lang === 'ru' ? 'дн' : 'дн'}`
+  }
+
+  function loadSnapshot(snap: Snapshot) {
+    setDays(snap.state.days)
+    setGender(snap.state.gender)
+    setTravelerType(snap.state.travelerType)
+    setTravelType(snap.state.travelType)
+    setOverrides(snap.state.overrides)
+  }
+
+  function deleteSnapshot(id: string) {
+    if (typeof window !== 'undefined' && !confirm(t.snapshots.confirmDelete)) return
+    const next = snapshots.filter((s) => s.id !== id)
+    setSnapshots(next)
+    saveSnapshotsToStorage(next)
+  }
+
+  /* -------------------- render -------------------- */
 
   return (
     <>
       <style>{packmateCss}</style>
       <main className="pm-app">
-        <header className="pm-header">
-          <div className="pm-logo">
-            <span className="pm-logo-mark" aria-hidden>🧳</span>
+        <div className="pm-hero-bg" aria-hidden />
+
+        <header className="pm-hero">
+          <div className="pm-hero-left">
+            <LogoMark size={92} />
             <div>
-              <h1 className="pm-title">PackMate</h1>
-              <p className="pm-sub">Smart packing for any trip — powered by math, not vibes.</p>
+              <h1 className="pm-title">
+                <span className="pm-title-grad">PackMate</span>
+              </h1>
+              <p className="pm-tagline">{t.tagline}</p>
+              <p className="pm-sub">{t.subtitle}</p>
             </div>
           </div>
-          <div className="pm-kpis">
-            <Kpi label="Items"  value={String(totalItems)} />
-            <Kpi label="Weight" value={`${totalWeight.toFixed(2)} kg`} />
-            <Kpi label="Volume" value={`${totalVolume.toFixed(2)} L`} />
+
+          <div className="pm-hero-right">
+            <LanguagePicker lang={lang} onChange={setLang} label={t.language} />
+            <div className="pm-kpis">
+              <Kpi label={t.kpi.items}  value={String(totalItems)} accent />
+              <Kpi label={t.kpi.weight} value={`${totalWeight.toFixed(2)} kg`} />
+              <Kpi label={t.kpi.volume} value={`${totalVolume.toFixed(2)} L`} />
+            </div>
           </div>
         </header>
 
@@ -254,10 +910,10 @@ function App() {
         )}
 
         <section className="pm-controls" aria-label="Trip settings">
-          <div className="pm-control">
+          <div className="pm-control pm-control-span-2">
             <div className="pm-control-head">
-              <label htmlFor="days" className="pm-label">Trip length</label>
-              <span className="pm-pill">{days} {days === 1 ? 'day' : 'days'}</span>
+              <label htmlFor="days" className="pm-label">{t.controls.tripLength}</label>
+              <span className="pm-pill">{days} {days === 1 ? t.controls.day : t.controls.days}</span>
             </div>
             <input
               id="days"
@@ -269,7 +925,7 @@ function App() {
               onChange={(e) => setDays(Number(e.target.value))}
               className="pm-range"
               style={{
-                background: `linear-gradient(to right, var(--pm-accent) 0%, var(--pm-accent) ${((days - 1) / 20) * 100}%, var(--pm-track) ${((days - 1) / 20) * 100}%, var(--pm-track) 100%)`,
+                background: `linear-gradient(to right, var(--pm-accent) 0%, var(--pm-accent-2) ${((days - 1) / 20) * 100}%, var(--pm-track) ${((days - 1) / 20) * 100}%, var(--pm-track) 100%)`,
               }}
             />
             <div className="pm-range-scale">
@@ -279,38 +935,86 @@ function App() {
 
           <div className="pm-control">
             <div className="pm-control-head">
-              <span className="pm-label">Traveler profile</span>
-              <span className="pm-pill pm-pill-muted">shows the matching hygiene kit</span>
+              <span className="pm-label">{t.controls.gender}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.genderHint}</span>
             </div>
-            <div className="pm-segmented" role="tablist" aria-label="Gender profile">
+            <div className="pm-segmented">
               <button
-                role="tab"
-                aria-selected={gender === 'male'}
+                aria-pressed={gender === 'male'}
                 className={`pm-seg ${gender === 'male' ? 'pm-seg-active' : ''}`}
                 onClick={() => setGender('male')}
                 type="button"
               >
-                <span aria-hidden>👨</span> Male
+                <span aria-hidden>👨</span> {t.controls.male}
               </button>
               <button
-                role="tab"
-                aria-selected={gender === 'female'}
+                aria-pressed={gender === 'female'}
                 className={`pm-seg ${gender === 'female' ? 'pm-seg-active' : ''}`}
                 onClick={() => setGender('female')}
                 type="button"
               >
-                <span aria-hidden>👩</span> Female
+                <span aria-hidden>👩</span> {t.controls.female}
               </button>
+            </div>
+          </div>
+
+          <div className="pm-control">
+            <div className="pm-control-head">
+              <span className="pm-label">{t.controls.traveler}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.travelerHint}</span>
+            </div>
+            <div className="pm-tiles">
+              {(['lean', 'it', 'prepared'] as TravelerType[]).map((tt) => {
+                const info = t.travelers[tt]
+                const active = travelerType === tt
+                return (
+                  <button
+                    key={tt}
+                    type="button"
+                    onClick={() => setTravelerType(tt)}
+                    className={`pm-tile ${active ? 'pm-tile-active' : ''}`}
+                    aria-pressed={active}
+                  >
+                    <span className="pm-tile-emoji" aria-hidden>{info.emoji}</span>
+                    <span className="pm-tile-name">{info.name}</span>
+                    <span className="pm-tile-tag">{info.tagline}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="pm-control pm-control-span-2">
+            <div className="pm-control-head">
+              <span className="pm-label">{t.controls.travelType}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.travelTypeHint}</span>
+            </div>
+            <div className="pm-chips">
+              {(['city', 'summer', 'ski', 'hiking', 'business'] as TravelType[]).map((tt) => {
+                const info = t.travelTypes[tt]
+                const active = travelType === tt
+                return (
+                  <button
+                    key={tt}
+                    type="button"
+                    onClick={() => setTravelType(tt)}
+                    className={`pm-chip ${active ? 'pm-chip-active' : ''}`}
+                    aria-pressed={active}
+                  >
+                    <span aria-hidden>{info.emoji}</span> {info.name}
+                  </button>
+                )
+              })}
             </div>
           </div>
         </section>
 
         <section className="pm-grid">
-          <div className="pm-items" aria-label="Packing list">
+          <div className="pm-items" aria-label={t.list.title}>
             <div className="pm-items-head">
-              <h2 className="pm-h2">Packing list</h2>
+              <h2 className="pm-h2">{t.list.title}</h2>
               <span className="pm-muted">
-                {activeItems.length} items across {CATEGORY_ORDER.filter((c) => activeItems.some((i) => i.category === c)).length} categories · auto-scaled to {days}d
+                {t.list.breakdown(activeItems.length, usedCategoriesCount, days)}
               </span>
             </div>
 
@@ -323,9 +1027,9 @@ function App() {
                 <div key={cat} className="pm-cat">
                   <div className="pm-cat-head">
                     <span className="pm-cat-emoji" aria-hidden>{CATEGORY_EMOJI[cat]}</span>
-                    <h3 className="pm-cat-name">{cat}</h3>
+                    <h3 className="pm-cat-name">{t.categories[cat]}</h3>
                     <span className="pm-cat-meta">
-                      {catQty} {catQty === 1 ? 'piece' : 'pieces'} · {catWeight.toFixed(2)} kg
+                      {t.list.pieces(catQty)} · {catWeight.toFixed(2)} kg
                     </span>
                   </div>
                   <ul className="pm-list">
@@ -338,6 +1042,7 @@ function App() {
                       const essentialMissing = !!it.essential && qty === 0
                       const lowOnScaling =
                         !it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2)
+                      const itemName = t.items[it.id] ?? it.id
                       return (
                         <li
                           key={it.id}
@@ -350,29 +1055,29 @@ function App() {
                             .filter(Boolean)
                             .join(' ')}
                         >
-                          <div className="pm-item-emoji" aria-hidden>
-                            {it.emoji}
-                          </div>
+                          <div className="pm-item-emoji" aria-hidden>{it.emoji}</div>
 
                           <div className="pm-item-info">
                             <div className="pm-item-name">
-                              {it.name}
+                              {itemName}
                               {it.essential && (
-                                <span className="pm-tag pm-tag-essential">essential</span>
+                                <span className="pm-tag pm-tag-essential">{t.list.essential}</span>
                               )}
                               {it.gender && (
-                                <span className="pm-tag pm-tag-gender">{it.gender}</span>
+                                <span className="pm-tag pm-tag-gender">
+                                  {it.gender === 'male' ? t.list.genderTag.male : t.list.genderTag.female}
+                                </span>
                               )}
                             </div>
                             <div className="pm-item-meta">
                               {it.fixed ? (
-                                <>{'Fixed item · suggested '}<b>1</b></>
+                                <>{t.list.fixedItem}{' · '}{t.list.suggested}{' '}<b>1</b></>
                               ) : (
                                 <>
                                   {it.basePerDay === 1
-                                    ? '1 / day'
-                                    : `${it.basePerDay} / day`}
-                                  {' · suggested '}<b>{def}</b>
+                                    ? `1${t.list.perDay}`
+                                    : `${it.basePerDay}${t.list.perDay}`}
+                                  {' · '}{t.list.suggested}{' '}<b>{def}</b>
                                 </>
                               )}
                               <span className="pm-dot">•</span>
@@ -388,18 +1093,16 @@ function App() {
                               className="pm-btn pm-btn-round"
                               onClick={() => setQty(it, qty - 1)}
                               disabled={qty <= 0}
-                              aria-label={`Decrease ${it.name}`}
+                              aria-label={`− ${itemName}`}
                             >
                               −
                             </button>
-                            <span className="pm-qty-val" aria-live="polite">
-                              {qty}
-                            </span>
+                            <span className="pm-qty-val" aria-live="polite">{qty}</span>
                             <button
                               type="button"
                               className="pm-btn pm-btn-round"
                               onClick={() => setQty(it, qty + 1)}
-                              aria-label={`Increase ${it.name}`}
+                              aria-label={`+ ${itemName}`}
                             >
                               +
                             </button>
@@ -408,8 +1111,8 @@ function App() {
                                 type="button"
                                 className="pm-btn pm-btn-link"
                                 onClick={() => resetItem(it)}
-                                aria-label={`Reset ${it.name}`}
-                                title="Reset to suggested"
+                                aria-label={`reset ${itemName}`}
+                                title={`reset ${itemName}`}
                               >
                                 ↺
                               </button>
@@ -425,11 +1128,11 @@ function App() {
           </div>
 
           <aside className="pm-summary" aria-label="Trip summary">
-            <div className="pm-card">
-              <h2 className="pm-h2">Live telemetry</h2>
+            <div className="pm-card pm-card-glow">
+              <h2 className="pm-h2">{t.telemetry.title}</h2>
 
               <Gauge
-                label="Volume"
+                label={t.telemetry.volume}
                 value={`${totalVolume.toFixed(2)} L`}
                 pct={volumePct}
                 color="var(--pm-accent)"
@@ -438,9 +1141,8 @@ function App() {
                   { at: (45 / 70) * 100, label: '45L' },
                 ]}
               />
-
               <Gauge
-                label="Weight"
+                label={t.telemetry.weight}
                 value={`${totalWeight.toFixed(2)} kg`}
                 pct={weightPct}
                 color={totalWeight > 20 ? 'var(--pm-danger)' : 'var(--pm-success)'}
@@ -450,36 +1152,139 @@ function App() {
 
             <div className={`pm-card pm-luggage pm-luggage-${luggage.tier}`}>
               <div className="pm-luggage-head">
-                <span className="pm-muted pm-uppercase">Recommended luggage</span>
-                <span className="pm-pill pm-pill-muted">tier {luggage.tier}/3</span>
+                <span className="pm-muted pm-uppercase">{t.luggage.title}</span>
+                <span className="pm-pill pm-pill-muted">{t.luggage.tier(luggage.tier)}</span>
               </div>
               <div className="pm-luggage-body">
                 <div className="pm-luggage-emoji" aria-hidden>{luggage.emoji}</div>
                 <div>
-                  <div className="pm-luggage-name">{luggage.name}</div>
-                  <div className="pm-muted">Fits {luggage.capacity}</div>
+                  <div className="pm-luggage-name">{t.luggage[luggage.nameKey]}</div>
+                  <div className="pm-muted">
+                    {luggage.tier === 1 && t.luggage.capacityUpTo(25)}
+                    {luggage.tier === 2 && t.luggage.capacityBetween(25, 45)}
+                    {luggage.tier === 3 && t.luggage.capacityOver(45)}
+                  </div>
                 </div>
               </div>
               <div className="pm-luggage-bar" aria-hidden>
-                <div className={`pm-luggage-seg ${luggage.tier >= 1 ? 'on' : ''}`}>Backpack</div>
-                <div className={`pm-luggage-seg ${luggage.tier >= 2 ? 'on' : ''}`}>Carry-on</div>
-                <div className={`pm-luggage-seg ${luggage.tier >= 3 ? 'on' : ''}`}>Suitcase</div>
+                <div className={`pm-luggage-seg ${luggage.tier >= 1 ? 'on' : ''}`}>{t.luggage.barBackpack}</div>
+                <div className={`pm-luggage-seg ${luggage.tier >= 2 ? 'on' : ''}`}>{t.luggage.barCarryOn}</div>
+                <div className={`pm-luggage-seg ${luggage.tier >= 3 ? 'on' : ''}`}>{t.luggage.barSuitcase}</div>
               </div>
+            </div>
+
+            <div className="pm-card">
+              <div className="pm-snapshots-head">
+                <h2 className="pm-h2">{t.snapshots.title}</h2>
+                <span className="pm-muted pm-tiny">💾 {t.snapshots.autoSaved}</span>
+              </div>
+              <div className="pm-snapshot-form">
+                <input
+                  type="text"
+                  className="pm-input"
+                  placeholder={t.snapshots.placeholder}
+                  value={snapshotName}
+                  onChange={(e) => setSnapshotName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') saveSnapshot() }}
+                  maxLength={48}
+                />
+                <button
+                  type="button"
+                  className="pm-btn pm-btn-primary"
+                  onClick={saveSnapshot}
+                >
+                  💾 {t.snapshots.save}
+                </button>
+              </div>
+
+              {snapshots.length === 0 ? (
+                <p className="pm-muted pm-empty">{t.snapshots.empty}</p>
+              ) : (
+                <ul className="pm-snapshot-list">
+                  {snapshots.map((s) => (
+                    <li key={s.id} className="pm-snapshot">
+                      <div className="pm-snapshot-info">
+                        <div className="pm-snapshot-name">{s.name}</div>
+                        <div className="pm-muted pm-tiny">
+                          {t.travelTypes[s.state.travelType].emoji} {t.travelTypes[s.state.travelType].name}
+                          {' · '}{t.travelers[s.state.travelerType].emoji} {t.travelers[s.state.travelerType].name}
+                          {' · '}{s.state.days}{lang === 'en' ? 'd' : lang === 'ru' ? 'дн' : 'дн'}
+                        </div>
+                      </div>
+                      <div className="pm-snapshot-actions">
+                        <button
+                          type="button"
+                          className="pm-btn pm-btn-sm"
+                          onClick={() => loadSnapshot(s)}
+                          title={t.snapshots.load}
+                        >
+                          ↥ {t.snapshots.load}
+                        </button>
+                        <button
+                          type="button"
+                          className="pm-btn pm-btn-sm pm-btn-danger"
+                          onClick={() => deleteSnapshot(s.id)}
+                          title={t.snapshots.delete}
+                          aria-label={t.snapshots.delete}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </aside>
         </section>
 
         <footer className="pm-footer">
-          <span className="pm-muted">PackMate · v1.0 · Pack light, travel far.</span>
+          <span className="pm-muted">{t.footer}</span>
         </footer>
       </main>
     </>
   )
 }
 
-function Kpi({ label, value }: { label: string; value: string }) {
+/* ============================================================ SUB-COMPONENTS ============================================================ */
+
+function LogoMark({ size }: { size: number }) {
   return (
-    <div className="pm-kpi">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
+      className="pm-logo-svg"
+      aria-hidden
+    >
+      <defs>
+        <linearGradient id="pm-logo-bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="var(--pm-accent)" />
+          <stop offset="1" stopColor="var(--pm-accent-2)" />
+        </linearGradient>
+        <linearGradient id="pm-logo-body" x1="12" y1="18" x2="52" y2="50" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#eef2ff" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="14" fill="url(#pm-logo-bg)" />
+      <path d="M24 18 v-4 a4 4 0 0 1 4 -4 h8 a4 4 0 0 1 4 4 v4" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" fill="none" />
+      <rect x="12" y="18" width="40" height="32" rx="5" fill="url(#pm-logo-body)" />
+      <rect x="29" y="18" width="6" height="32" fill="var(--pm-accent-strong)" opacity="0.18" />
+      <rect x="27" y="30" width="10" height="6" rx="1.5" fill="var(--pm-accent-strong)" />
+      <rect x="30" y="32" width="4" height="2" rx="0.5" fill="#ffffff" />
+      <circle cx="17" cy="23" r="1.2" fill="#cbd5e1" />
+      <circle cx="47" cy="23" r="1.2" fill="#cbd5e1" />
+      <circle cx="17" cy="45" r="1.2" fill="#cbd5e1" />
+      <circle cx="47" cy="45" r="1.2" fill="#cbd5e1" />
+    </svg>
+  )
+}
+
+function Kpi({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className={`pm-kpi ${accent ? 'pm-kpi-accent' : ''}`}>
       <div className="pm-kpi-value">{value}</div>
       <div className="pm-kpi-label">{label}</div>
     </div>
@@ -495,10 +1300,7 @@ interface GaugeProps {
 }
 
 function Gauge({ label, value, pct, color, ticks = [] }: GaugeProps) {
-  const barStyle: CSSProperties = {
-    width: `${pct}%`,
-    background: color,
-  }
+  const barStyle: CSSProperties = { width: `${pct}%`, background: color }
   return (
     <div className="pm-gauge">
       <div className="pm-gauge-head">
@@ -507,14 +1309,9 @@ function Gauge({ label, value, pct, color, ticks = [] }: GaugeProps) {
       </div>
       <div className="pm-gauge-track">
         <div className="pm-gauge-fill" style={barStyle} />
-        {ticks.map((t, i) => (
-          <span
-            key={i}
-            className="pm-gauge-tick"
-            style={{ left: `${t.at}%` }}
-            title={t.label}
-          >
-            <span className="pm-gauge-tick-label">{t.label}</span>
+        {ticks.map((tk, i) => (
+          <span key={i} className="pm-gauge-tick" style={{ left: `${tk.at}%` }}>
+            <span className="pm-gauge-tick-label">{tk.label}</span>
           </span>
         ))}
       </div>
@@ -522,165 +1319,322 @@ function Gauge({ label, value, pct, color, ticks = [] }: GaugeProps) {
   )
 }
 
+function LanguagePicker({
+  lang,
+  onChange,
+  label,
+}: {
+  lang: Lang
+  onChange: (l: Lang) => void
+  label: string
+}) {
+  const [open, setOpen] = useState(false)
+  const current = LANGS.find((l) => l.code === lang) || LANGS[0]
+  return (
+    <div className={`pm-lang ${open ? 'pm-lang-open' : ''}`}>
+      <button
+        type="button"
+        className="pm-lang-btn"
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={label}
+      >
+        <span className="pm-lang-flag" aria-hidden>{current.flag}</span>
+        <span className="pm-lang-name">{current.name}</span>
+        <span className="pm-lang-caret" aria-hidden>▾</span>
+      </button>
+      {open && (
+        <ul className="pm-lang-menu" role="listbox">
+          {LANGS.map((l) => (
+            <li key={l.code}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={l.code === lang}
+                className={`pm-lang-item ${l.code === lang ? 'pm-lang-item-active' : ''}`}
+                onClick={() => { onChange(l.code); setOpen(false) }}
+              >
+                <span className="pm-lang-flag" aria-hidden>{l.flag}</span>
+                {l.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+/* ============================================================ STYLES ============================================================ */
+
 const packmateCss = `
 .pm-app {
   --pm-accent: #6366f1;
+  --pm-accent-2: #ec4899;
   --pm-accent-strong: #4f46e5;
-  --pm-accent-bg: #eef2ff;
-  --pm-text: #0f172a;
+  --pm-accent-bg: rgba(99, 102, 241, 0.10);
+  --pm-text: #0a0a18;
+  --pm-text-soft: #334155;
   --pm-muted: #64748b;
   --pm-card: #ffffff;
-  --pm-bg: #f8fafc;
+  --pm-card-soft: rgba(255, 255, 255, 0.7);
+  --pm-bg: #f6f7fb;
   --pm-border: #e2e8f0;
+  --pm-border-strong: #cbd5e1;
   --pm-track: #e2e8f0;
   --pm-danger: #dc2626;
-  --pm-danger-bg: #fef2f2;
+  --pm-danger-bg: #fee2e2;
   --pm-warn: #d97706;
-  --pm-warn-bg: #fffbeb;
+  --pm-warn-bg: #fef3c7;
   --pm-success: #16a34a;
-  --pm-shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px -8px rgba(15,23,42,.08);
+  --pm-shadow-sm: 0 1px 2px rgba(15,23,42,.06), 0 1px 3px rgba(15,23,42,.04);
+  --pm-shadow:    0 4px 12px -2px rgba(15,23,42,.08), 0 2px 6px -2px rgba(15,23,42,.05);
+  --pm-shadow-lg: 0 24px 48px -16px rgba(79, 70, 229, .25), 0 8px 16px -4px rgba(15,23,42,.06);
+  --pm-shadow-accent: 0 8px 24px -8px rgba(99,102,241,.35);
 
+  position: relative;
   box-sizing: border-box;
   width: 100%;
-  max-width: 1080px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 32px 24px 48px;
+  padding: 28px 28px 56px;
   text-align: left;
   color: var(--pm-text);
-  font: 15px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  letter-spacing: 0;
+  font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
+  letter-spacing: -0.005em;
+  isolation: isolate;
 }
 .pm-app *, .pm-app *::before, .pm-app *::after { box-sizing: border-box; }
 
 @media (prefers-color-scheme: dark) {
   .pm-app {
     --pm-accent: #818cf8;
+    --pm-accent-2: #f472b6;
     --pm-accent-strong: #a5b4fc;
-    --pm-accent-bg: rgba(129,140,248,.12);
-    --pm-text: #f1f5f9;
+    --pm-accent-bg: rgba(129, 140, 248, 0.15);
+    --pm-text: #f8fafc;
+    --pm-text-soft: #cbd5e1;
     --pm-muted: #94a3b8;
-    --pm-card: #1e1f29;
-    --pm-bg: #16171d;
-    --pm-border: #2e303a;
-    --pm-track: #2e303a;
+    --pm-card: #14141d;
+    --pm-card-soft: rgba(24, 24, 35, 0.7);
+    --pm-bg: #0a0a14;
+    --pm-border: #2a2a3a;
+    --pm-border-strong: #3a3a52;
+    --pm-track: #25253a;
     --pm-danger: #f87171;
-    --pm-danger-bg: rgba(248,113,113,.10);
+    --pm-danger-bg: rgba(248,113,113,.12);
     --pm-warn: #fbbf24;
-    --pm-warn-bg: rgba(251,191,36,.10);
+    --pm-warn-bg: rgba(251,191,36,.12);
     --pm-success: #4ade80;
-    --pm-shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -8px rgba(0,0,0,.4);
+    --pm-shadow-sm: 0 1px 3px rgba(0,0,0,.4);
+    --pm-shadow:    0 6px 16px -4px rgba(0,0,0,.5), 0 2px 6px rgba(0,0,0,.3);
+    --pm-shadow-lg: 0 24px 56px -16px rgba(99,102,241,.45), 0 8px 16px -4px rgba(0,0,0,.4);
+    --pm-shadow-accent: 0 12px 32px -8px rgba(129,140,248,.45);
   }
 }
 
-.pm-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-  margin-bottom: 24px;
+/* ========== animated background mesh ========== */
+.pm-hero-bg {
+  position: absolute;
+  inset: -40px -40px auto -40px;
+  height: 460px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(60% 80% at 12% 12%, rgba(99,102,241,.35) 0%, transparent 60%),
+    radial-gradient(50% 60% at 88% 18%, rgba(236,72,153,.30) 0%, transparent 60%),
+    radial-gradient(40% 50% at 50% 80%, rgba(168,85,247,.22) 0%, transparent 70%);
+  filter: blur(8px) saturate(1.1);
+  opacity: .9;
 }
-.pm-logo { display: flex; align-items: center; gap: 16px; }
-.pm-logo-mark {
-  width: 56px; height: 56px;
-  display: grid; place-items: center;
-  font-size: 30px;
-  border-radius: 16px;
-  background: var(--pm-accent-bg);
-  border: 1px solid var(--pm-border);
+@media (prefers-color-scheme: dark) {
+  .pm-hero-bg {
+    background:
+      radial-gradient(60% 80% at 12% 12%, rgba(129,140,248,.40) 0%, transparent 60%),
+      radial-gradient(50% 60% at 88% 18%, rgba(244,114,182,.32) 0%, transparent 60%),
+      radial-gradient(40% 50% at 50% 80%, rgba(168,85,247,.25) 0%, transparent 70%);
+    opacity: .7;
+  }
 }
-.pm-title {
-  font-size: 32px;
-  line-height: 1.1;
-  margin: 0;
-  font-weight: 700;
-  letter-spacing: -0.6px;
-  color: var(--pm-text);
-}
-.pm-sub { color: var(--pm-muted); margin: 4px 0 0; font-size: 14px; }
 
-.pm-kpis { display: flex; gap: 12px; flex-wrap: wrap; }
+/* ========== hero ========== */
+.pm-hero {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 28px;
+  align-items: center;
+  margin-bottom: 28px;
+}
+.pm-hero-left { display: flex; align-items: center; gap: 22px; min-width: 0; }
+.pm-hero-right { display: flex; flex-direction: column; align-items: flex-end; gap: 14px; }
+
+.pm-logo-svg {
+  filter: drop-shadow(0 18px 32px rgba(99, 102, 241, .35));
+  transition: transform .25s ease;
+  flex-shrink: 0;
+}
+.pm-logo-svg:hover { transform: rotate(-3deg) scale(1.04); }
+@media (prefers-color-scheme: dark) {
+  .pm-logo-svg { filter: drop-shadow(0 18px 32px rgba(129, 140, 248, .55)); }
+}
+
+.pm-title {
+  margin: 0;
+  font-size: 56px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-weight: 800;
+}
+.pm-title-grad {
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.pm-tagline {
+  margin: 6px 0 2px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--pm-text);
+  letter-spacing: -0.01em;
+}
+.pm-sub { color: var(--pm-muted); margin: 0; font-size: 14.5px; max-width: 52ch; }
+
+/* ========== KPI ========== */
+.pm-kpis { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .pm-kpi {
   background: var(--pm-card);
   border: 1px solid var(--pm-border);
-  border-radius: 12px;
-  padding: 10px 16px;
-  min-width: 96px;
+  border-radius: 14px;
+  padding: 12px 18px;
+  min-width: 108px;
   text-align: right;
-  box-shadow: var(--pm-shadow);
+  box-shadow: var(--pm-shadow-sm);
+  transition: transform .2s ease, box-shadow .2s ease;
 }
-.pm-kpi-value { font-size: 18px; font-weight: 600; color: var(--pm-text); }
-.pm-kpi-label {
-  font-size: 11px; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--pm-muted); margin-top: 2px;
+.pm-kpi:hover { transform: translateY(-2px); box-shadow: var(--pm-shadow); }
+.pm-kpi-value { font-size: 22px; font-weight: 700; color: var(--pm-text); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.pm-kpi-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--pm-muted); margin-top: 2px; font-weight: 600; }
+.pm-kpi-accent {
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: var(--pm-shadow-accent);
 }
+.pm-kpi-accent .pm-kpi-value { color: #fff; }
+.pm-kpi-accent .pm-kpi-label { color: rgba(255,255,255,.85); }
 
-.pm-warnings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+/* ========== language picker ========== */
+.pm-lang { position: relative; }
+.pm-lang-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--pm-card); color: var(--pm-text);
+  border: 1px solid var(--pm-border); border-radius: 999px;
+  padding: 7px 12px 7px 8px; font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; box-shadow: var(--pm-shadow-sm);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.pm-lang-btn:hover { border-color: var(--pm-accent); transform: translateY(-1px); }
+.pm-lang-flag { font-size: 18px; line-height: 1; }
+.pm-lang-name { letter-spacing: -0.01em; }
+.pm-lang-caret { font-size: 10px; opacity: .6; transition: transform .2s ease; }
+.pm-lang-open .pm-lang-caret { transform: rotate(180deg); }
+.pm-lang-menu {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  background: var(--pm-card); border: 1px solid var(--pm-border);
+  border-radius: 12px; padding: 6px; margin: 0; list-style: none;
+  box-shadow: var(--pm-shadow-lg);
+  min-width: 180px; z-index: 20;
+}
+.pm-lang-item {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  background: transparent; border: 0; padding: 8px 10px;
+  border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px;
+  color: var(--pm-text); text-align: left;
+}
+.pm-lang-item:hover { background: var(--pm-accent-bg); }
+.pm-lang-item-active { background: var(--pm-accent-bg); color: var(--pm-accent-strong); font-weight: 600; }
+
+/* ========== warnings ========== */
+.pm-warnings { display: flex; flex-direction: column; gap: 8px; margin-bottom: 22px; }
 .pm-alert {
-  display: flex; align-items: flex-start; gap: 10px;
+  display: flex; align-items: flex-start; gap: 12px;
   border: 1px solid var(--pm-border);
-  border-radius: 12px;
-  padding: 12px 14px;
-  font-size: 14px;
+  border-radius: 14px;
+  padding: 12px 16px;
+  font-size: 14px; font-weight: 500;
   background: var(--pm-card);
+  box-shadow: var(--pm-shadow-sm);
+  animation: pm-pop .25s cubic-bezier(.34,1.56,.64,1);
 }
-.pm-alert-over   { background: var(--pm-warn-bg);   border-color: color-mix(in srgb, var(--pm-warn) 30%, transparent); color: var(--pm-text); }
-.pm-alert-under  { background: var(--pm-danger-bg); border-color: color-mix(in srgb, var(--pm-danger) 40%, transparent); color: var(--pm-text); }
+.pm-alert-over   { background: var(--pm-warn-bg);   border-color: color-mix(in srgb, var(--pm-warn) 35%, transparent); }
+.pm-alert-under  { background: var(--pm-danger-bg); border-color: color-mix(in srgb, var(--pm-danger) 45%, transparent); }
 .pm-alert-icon { font-size: 18px; line-height: 1.2; }
+@keyframes pm-pop {
+  from { opacity: 0; transform: translateY(-6px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
 
+/* ========== controls ========== */
 .pm-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
+  gap: 14px;
   margin-bottom: 24px;
 }
+.pm-control-span-2 { grid-column: 1 / -1; }
 .pm-control {
   background: var(--pm-card);
   border: 1px solid var(--pm-border);
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 18px 20px;
   box-shadow: var(--pm-shadow);
 }
 .pm-control-head {
   display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 12px; gap: 12px;
 }
-.pm-label { font-weight: 600; color: var(--pm-text); font-size: 15px; }
+.pm-label { font-weight: 700; color: var(--pm-text); font-size: 15px; letter-spacing: -0.01em; }
 .pm-pill {
   background: var(--pm-accent-bg);
   color: var(--pm-accent-strong);
-  font-weight: 600;
-  font-size: 13px;
-  padding: 4px 10px;
-  border-radius: 999px;
+  font-weight: 700; font-size: 12.5px;
+  padding: 4px 11px; border-radius: 999px;
+  font-variant-numeric: tabular-nums; letter-spacing: 0;
 }
-.pm-pill-muted { background: transparent; color: var(--pm-muted); border: 1px solid var(--pm-border); font-weight: 500; }
+.pm-pill-muted {
+  background: transparent; color: var(--pm-muted);
+  border: 1px solid var(--pm-border); font-weight: 500;
+}
 
+/* range */
 .pm-range {
   -webkit-appearance: none; appearance: none;
-  width: 100%; height: 6px; border-radius: 999px;
+  width: 100%; height: 8px; border-radius: 999px;
   outline: none; cursor: pointer;
 }
 .pm-range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 20px; height: 20px; border-radius: 50%;
-  background: var(--pm-card);
-  border: 3px solid var(--pm-accent);
-  box-shadow: 0 2px 6px rgba(99,102,241,.4);
-  cursor: grab;
-  transition: transform .15s ease;
-}
-.pm-range::-webkit-slider-thumb:active { transform: scale(1.15); cursor: grabbing; }
-.pm-range::-moz-range-thumb {
-  width: 20px; height: 20px; border-radius: 50%;
+  width: 22px; height: 22px; border-radius: 50%;
   background: var(--pm-card); border: 3px solid var(--pm-accent);
-  box-shadow: 0 2px 6px rgba(99,102,241,.4); cursor: grab;
+  box-shadow: 0 4px 10px rgba(99,102,241,.45), 0 0 0 6px rgba(99,102,241,.0);
+  cursor: grab; transition: transform .15s ease, box-shadow .15s ease;
+}
+.pm-range::-webkit-slider-thumb:hover { box-shadow: 0 4px 12px rgba(99,102,241,.55), 0 0 0 6px rgba(99,102,241,.15); }
+.pm-range::-webkit-slider-thumb:active { transform: scale(1.18); cursor: grabbing; }
+.pm-range::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--pm-card); border: 3px solid var(--pm-accent);
+  box-shadow: 0 4px 10px rgba(99,102,241,.45); cursor: grab;
 }
 .pm-range-scale {
   display: flex; justify-content: space-between;
-  margin-top: 8px; color: var(--pm-muted); font-size: 12px;
+  margin-top: 10px; color: var(--pm-muted); font-size: 12px;
+  font-variant-numeric: tabular-nums; font-weight: 600;
 }
 
+/* segmented (gender) */
 .pm-segmented {
   display: grid; grid-template-columns: 1fr 1fr;
   background: var(--pm-bg);
@@ -698,109 +1652,164 @@ const packmateCss = `
 .pm-seg:hover { color: var(--pm-text); }
 .pm-seg-active {
   background: var(--pm-card); color: var(--pm-accent-strong);
-  box-shadow: var(--pm-shadow);
+  box-shadow: var(--pm-shadow-sm);
 }
 
+/* tiles (traveler) */
+.pm-tiles { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.pm-tile {
+  border: 1px solid var(--pm-border);
+  background: var(--pm-bg);
+  border-radius: 12px;
+  padding: 12px 8px 10px;
+  text-align: center;
+  cursor: pointer;
+  font: inherit;
+  color: var(--pm-text);
+  transition: transform .15s ease, border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.pm-tile:hover { transform: translateY(-2px); border-color: var(--pm-accent); }
+.pm-tile-emoji { font-size: 26px; line-height: 1; }
+.pm-tile-name { font-weight: 700; font-size: 14px; }
+.pm-tile-tag { font-size: 11px; color: var(--pm-muted); }
+.pm-tile-active {
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: var(--pm-shadow-accent);
+  transform: translateY(-2px);
+}
+.pm-tile-active .pm-tile-tag { color: rgba(255,255,255,.88); }
+
+/* chips (travel type) */
+.pm-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.pm-chip {
+  border: 1px solid var(--pm-border);
+  background: var(--pm-bg);
+  color: var(--pm-text);
+  padding: 9px 14px;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 600; font-size: 13.5px;
+  cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: all .15s ease;
+}
+.pm-chip:hover { border-color: var(--pm-accent); transform: translateY(-1px); }
+.pm-chip-active {
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  border-color: transparent;
+  color: #ffffff;
+  box-shadow: var(--pm-shadow-accent);
+}
+
+/* ========== grid ========== */
 .pm-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 16px;
   align-items: start;
 }
+
+/* ========== items ========== */
 .pm-items {
   background: var(--pm-card);
   border: 1px solid var(--pm-border);
-  border-radius: 16px;
-  padding: 18px 20px;
+  border-radius: 18px;
+  padding: 22px 24px;
   box-shadow: var(--pm-shadow);
 }
 .pm-items-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin-bottom: 12px;
+  margin-bottom: 8px; gap: 8px; flex-wrap: wrap;
 }
-.pm-h2 { margin: 0; font-size: 18px; color: var(--pm-text); font-weight: 600; letter-spacing: -0.2px; }
+.pm-h2 { margin: 0; font-size: 19px; color: var(--pm-text); font-weight: 700; letter-spacing: -0.02em; }
 .pm-muted { color: var(--pm-muted); font-size: 13px; }
-.pm-uppercase { text-transform: uppercase; letter-spacing: 0.08em; font-size: 11px; }
+.pm-tiny  { font-size: 11.5px; }
+.pm-uppercase { text-transform: uppercase; letter-spacing: 0.09em; font-size: 11px; font-weight: 700; }
 
-.pm-cat { margin-top: 18px; }
-.pm-cat:first-of-type { margin-top: 4px; }
+.pm-cat { margin-top: 20px; }
+.pm-cat:first-of-type { margin-top: 6px; }
 .pm-cat-head {
   display: flex; align-items: center; gap: 10px;
-  padding: 0 4px 8px;
+  padding: 0 4px 10px;
   border-bottom: 1px dashed var(--pm-border);
   margin-bottom: 10px;
 }
 .pm-cat-emoji {
-  width: 28px; height: 28px;
+  width: 30px; height: 30px;
   display: grid; place-items: center;
   font-size: 16px;
   background: var(--pm-accent-bg);
-  border-radius: 8px;
+  border-radius: 9px;
 }
 .pm-cat-name {
   margin: 0; flex: 1;
   font-size: 13px; font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  text-transform: uppercase; letter-spacing: 0.09em;
   color: var(--pm-text);
 }
-.pm-cat-meta {
-  font-size: 12px; color: var(--pm-muted);
-  font-variant-numeric: tabular-nums;
-}
+.pm-cat-meta { font-size: 12px; color: var(--pm-muted); font-variant-numeric: tabular-nums; }
 
 .pm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .pm-item {
   display: grid;
-  grid-template-columns: 48px 1fr auto;
+  grid-template-columns: 50px 1fr auto;
   gap: 14px; align-items: center;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--pm-border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--pm-bg);
-  transition: border-color .15s ease, background .15s ease;
+  transition: all .18s ease;
 }
-.pm-item:hover { border-color: color-mix(in srgb, var(--pm-accent) 35%, var(--pm-border)); }
-.pm-item-warn { border-color: color-mix(in srgb, var(--pm-warn) 50%, transparent); background: var(--pm-warn-bg); }
-.pm-item-low { border-color: color-mix(in srgb, var(--pm-warn) 35%, transparent); background: var(--pm-warn-bg); }
+.pm-item:hover {
+  border-color: color-mix(in srgb, var(--pm-accent) 40%, var(--pm-border));
+  transform: translateY(-1px);
+  box-shadow: var(--pm-shadow-sm);
+}
+.pm-item-warn   { border-color: color-mix(in srgb, var(--pm-warn) 50%, transparent); background: var(--pm-warn-bg); }
+.pm-item-low    { border-color: color-mix(in srgb, var(--pm-warn) 35%, transparent); background: var(--pm-warn-bg); }
 .pm-item-danger { border-color: color-mix(in srgb, var(--pm-danger) 50%, transparent); background: var(--pm-danger-bg); }
 
 .pm-item-emoji {
-  width: 48px; height: 48px;
-  font-size: 26px;
+  width: 50px; height: 50px;
+  font-size: 28px;
   display: grid; place-items: center;
   background: var(--pm-card);
   border: 1px solid var(--pm-border);
   border-radius: 12px;
+  flex-shrink: 0;
+  transition: transform .15s ease;
 }
+.pm-item:hover .pm-item-emoji { transform: scale(1.08) rotate(-3deg); }
+
 .pm-item-info { min-width: 0; }
 .pm-item-name {
-  font-weight: 600; color: var(--pm-text);
+  font-weight: 700; color: var(--pm-text);
   font-size: 15px; display: flex; align-items: center; gap: 8px;
-  flex-wrap: wrap;
+  flex-wrap: wrap; letter-spacing: -0.01em;
 }
 .pm-item-meta {
-  color: var(--pm-muted); font-size: 12.5px; margin-top: 2px;
-  line-height: 1.4;
+  color: var(--pm-muted); font-size: 12.5px; margin-top: 3px;
+  line-height: 1.45;
 }
-.pm-item-meta b { color: var(--pm-text); font-weight: 600; }
+.pm-item-meta b { color: var(--pm-text); font-weight: 700; font-variant-numeric: tabular-nums; }
 .pm-dot { margin: 0 8px; opacity: .5; }
 
 .pm-tag {
-  font-size: 10.5px; font-weight: 600;
+  font-size: 10px; font-weight: 700;
   padding: 2px 7px; border-radius: 999px;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  text-transform: uppercase; letter-spacing: 0.08em;
 }
 .pm-tag-essential { background: var(--pm-accent-bg); color: var(--pm-accent-strong); }
 .pm-tag-gender { background: var(--pm-bg); color: var(--pm-muted); border: 1px solid var(--pm-border); }
 
-.pm-qty {
-  display: inline-flex; align-items: center; gap: 6px;
-}
+.pm-qty { display: inline-flex; align-items: center; gap: 6px; }
 .pm-qty-val {
-  min-width: 28px; text-align: center;
+  min-width: 30px; text-align: center;
   font-variant-numeric: tabular-nums;
-  font-weight: 700; font-size: 15px;
+  font-weight: 800; font-size: 16px;
   color: var(--pm-text);
 }
 .pm-btn {
@@ -809,96 +1818,169 @@ const packmateCss = `
   color: var(--pm-text);
   cursor: pointer;
   font: inherit;
-  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .05s ease;
+  font-weight: 600;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .08s ease, box-shadow .15s ease;
 }
 .pm-btn:hover:not(:disabled) {
   border-color: var(--pm-accent);
   color: var(--pm-accent-strong);
+  box-shadow: var(--pm-shadow-sm);
 }
-.pm-btn:active:not(:disabled) { transform: scale(.96); }
-.pm-btn:disabled { opacity: .4; cursor: not-allowed; }
+.pm-btn:active:not(:disabled) { transform: scale(.95); }
+.pm-btn:disabled { opacity: .35; cursor: not-allowed; }
 .pm-btn-round {
-  width: 30px; height: 30px;
+  width: 32px; height: 32px;
   border-radius: 50%;
-  font-size: 18px; line-height: 1;
+  font-size: 20px; line-height: 1;
   display: grid; place-items: center;
 }
 .pm-btn-link {
   border: 0; background: transparent; padding: 4px 6px;
   color: var(--pm-muted); font-size: 16px;
 }
+.pm-btn-link:hover:not(:disabled) { background: var(--pm-accent-bg); border-radius: 8px; }
+.pm-btn-sm { padding: 6px 10px; border-radius: 8px; font-size: 12.5px; }
+.pm-btn-primary {
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  color: #ffffff; border-color: transparent;
+  box-shadow: var(--pm-shadow-accent);
+}
+.pm-btn-primary:hover:not(:disabled) { color: #ffffff; box-shadow: 0 12px 28px -8px rgba(99,102,241,.55); transform: translateY(-1px); }
+.pm-btn-danger { color: var(--pm-danger); }
+.pm-btn-danger:hover:not(:disabled) { color: #ffffff; background: var(--pm-danger); border-color: var(--pm-danger); }
 
-.pm-summary { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 16px; }
+/* ========== summary side ========== */
+.pm-summary {
+  display: flex; flex-direction: column; gap: 16px;
+  position: sticky; top: 16px;
+}
 .pm-card {
   background: var(--pm-card);
   border: 1px solid var(--pm-border);
-  border-radius: 16px;
-  padding: 18px 20px;
+  border-radius: 18px;
+  padding: 20px 22px;
   box-shadow: var(--pm-shadow);
 }
+.pm-card-glow {
+  background:
+    radial-gradient(80% 100% at 0% 0%, var(--pm-accent-bg) 0%, transparent 50%),
+    var(--pm-card);
+}
 
+/* gauge */
 .pm-gauge { margin-top: 14px; }
-.pm-gauge:first-of-type { margin-top: 16px; }
-.pm-gauge-head { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; }
-.pm-gauge-value { font-weight: 700; font-variant-numeric: tabular-nums; }
+.pm-gauge:first-of-type { margin-top: 18px; }
+.pm-gauge-head { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
+.pm-gauge-value { font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .pm-gauge-track {
-  position: relative; height: 8px;
+  position: relative; height: 10px;
   background: var(--pm-track);
   border-radius: 999px; overflow: visible;
 }
 .pm-gauge-fill {
   height: 100%; border-radius: 999px;
-  transition: width .35s cubic-bezier(.4,0,.2,1), background .25s ease;
+  transition: width .45s cubic-bezier(.4,0,.2,1), background .25s ease;
+  background-image: linear-gradient(90deg, rgba(255,255,255,.0), rgba(255,255,255,.4), rgba(255,255,255,.0));
+  background-blend-mode: overlay;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.15);
 }
 .pm-gauge-tick {
-  position: absolute; top: -3px; height: 14px; width: 2px;
-  background: var(--pm-muted); opacity: .5; border-radius: 2px;
+  position: absolute; top: -3px; height: 16px; width: 2px;
+  background: var(--pm-text); opacity: .35; border-radius: 2px;
 }
 .pm-gauge-tick-label {
-  position: absolute; top: 16px; left: 50%;
+  position: absolute; top: 18px; left: 50%;
   transform: translateX(-50%);
   font-size: 10px; color: var(--pm-muted);
-  white-space: nowrap;
+  white-space: nowrap; font-weight: 600;
 }
 
-.pm-luggage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
-.pm-luggage-body { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+/* luggage */
+.pm-luggage-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.pm-luggage-body { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
 .pm-luggage-emoji {
-  width: 56px; height: 56px;
-  font-size: 30px;
+  width: 64px; height: 64px;
+  font-size: 36px;
   display: grid; place-items: center;
-  background: var(--pm-accent-bg);
-  border-radius: 14px;
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  border-radius: 16px;
+  box-shadow: var(--pm-shadow-accent);
+  flex-shrink: 0;
 }
-.pm-luggage-name { font-size: 18px; font-weight: 700; color: var(--pm-text); letter-spacing: -0.2px; }
-
+.pm-luggage-name { font-size: 20px; font-weight: 800; color: var(--pm-text); letter-spacing: -0.02em; }
 .pm-luggage-bar {
   display: grid; grid-template-columns: 1fr 1fr 1fr;
   background: var(--pm-bg); border: 1px solid var(--pm-border);
   border-radius: 10px; overflow: hidden;
-  font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 10.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
 }
 .pm-luggage-seg {
-  padding: 8px 4px; text-align: center;
+  padding: 9px 4px; text-align: center;
   color: var(--pm-muted);
   border-right: 1px solid var(--pm-border);
-  transition: background .2s ease, color .2s ease;
+  transition: background .25s ease, color .25s ease;
 }
 .pm-luggage-seg:last-child { border-right: 0; }
-.pm-luggage-seg.on { background: var(--pm-accent); color: #fff; }
+.pm-luggage-seg.on {
+  background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  color: #ffffff;
+}
 
-.pm-footer { margin-top: 28px; text-align: center; }
+/* snapshots */
+.pm-snapshots-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 12px; }
+.pm-snapshot-form { display: flex; gap: 6px; margin-bottom: 12px; }
+.pm-input {
+  flex: 1; min-width: 0;
+  background: var(--pm-bg);
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font: inherit; font-size: 13.5px;
+  color: var(--pm-text);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.pm-input::placeholder { color: var(--pm-muted); }
+.pm-input:focus {
+  outline: none; border-color: var(--pm-accent);
+  box-shadow: 0 0 0 3px var(--pm-accent-bg);
+}
+.pm-empty { padding: 12px 0; text-align: center; }
+.pm-snapshot-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 360px; overflow-y: auto; }
+.pm-snapshot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--pm-border);
+  border-radius: 10px;
+  background: var(--pm-bg);
+  transition: border-color .15s ease, transform .15s ease;
+}
+.pm-snapshot:hover { border-color: var(--pm-accent); transform: translateX(2px); }
+.pm-snapshot-info { min-width: 0; flex: 1; }
+.pm-snapshot-name { font-weight: 700; font-size: 13.5px; color: var(--pm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: -0.01em; }
+.pm-snapshot-actions { display: inline-flex; gap: 4px; flex-shrink: 0; }
 
-@media (max-width: 820px) {
-  .pm-header { align-items: flex-start; }
-  .pm-kpis { width: 100%; }
-  .pm-kpi { flex: 1; text-align: left; min-width: 0; }
-  .pm-controls { grid-template-columns: 1fr; }
+/* footer */
+.pm-footer { margin-top: 36px; text-align: center; }
+
+/* responsive */
+@media (max-width: 960px) {
   .pm-grid { grid-template-columns: 1fr; }
   .pm-summary { position: static; }
-  .pm-item { grid-template-columns: 40px 1fr; grid-template-rows: auto auto; }
-  .pm-item-emoji { width: 40px; height: 40px; font-size: 22px; }
+}
+@media (max-width: 720px) {
+  .pm-app { padding: 20px 18px 40px; }
+  .pm-hero { grid-template-columns: 1fr; }
+  .pm-hero-left { align-items: flex-start; }
+  .pm-hero-right { align-items: stretch; flex-direction: column-reverse; }
+  .pm-kpis { justify-content: stretch; }
+  .pm-kpi { flex: 1; text-align: left; min-width: 0; }
+  .pm-title { font-size: 44px; }
+  .pm-controls { grid-template-columns: 1fr; }
+  .pm-control-span-2 { grid-column: 1; }
+  .pm-tiles { grid-template-columns: 1fr; }
+  .pm-item { grid-template-columns: 44px 1fr; grid-template-rows: auto auto; padding: 10px 12px; }
+  .pm-item-emoji { width: 44px; height: 44px; font-size: 24px; }
   .pm-qty { grid-column: 1 / -1; justify-content: flex-end; }
 }
 `
