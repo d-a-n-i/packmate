@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 /* ============================================================ TYPES ============================================================ */
 
@@ -270,6 +270,15 @@ interface Translations {
   travelers: Record<TravelerType, { name: string; tagline: string; emoji: string }>
   travelTypes: Record<TravelType, { name: string; emoji: string }>
   items: Record<string, string>
+  pack: {
+    label: string
+    progress: (n: number, total: number) => string
+    allPacked: string
+    clear: string
+    checkAria: (name: string) => string
+  }
+  share: { button: string; copied: string }
+  print: string
   footer: string
   language: string
 }
@@ -393,6 +402,15 @@ const T_EN: Translations = {
     'ski-gloves': 'Ski Gloves', 'ski-goggles': 'Ski Goggles', beanie: 'Beanie / Wool Hat',
     'hiking-boots': 'Hiking Boots', 'beach-towel': 'Beach Towel', necktie: 'Necktie',
   },
+  pack: {
+    label: 'Packing progress',
+    progress: (n, total) => `${n} / ${total} packed`,
+    allPacked: 'All packed — you are ready to go!',
+    clear: 'Uncheck all',
+    checkAria: (name) => `Mark ${name} as packed`,
+  },
+  share: { button: 'Share trip', copied: 'Link copied!' },
+  print: 'Print / PDF',
   footer: 'PackMate · pack light, travel far.',
   language: 'Language',
 }
@@ -501,6 +519,15 @@ const T_RU: Translations = {
     'ski-gloves': 'Лыжные перчатки', 'ski-goggles': 'Лыжные очки', beanie: 'Шапка',
     'hiking-boots': 'Походные ботинки', 'beach-towel': 'Пляжное полотенце', necktie: 'Галстук',
   },
+  pack: {
+    label: 'Прогресс сборов',
+    progress: (n, total) => `${n} / ${total} собрано`,
+    allPacked: 'Всё собрано — можно в путь!',
+    clear: 'Снять отметки',
+    checkAria: (name) => `Отметить «${name}» как собранное`,
+  },
+  share: { button: 'Поделиться', copied: 'Ссылка скопирована!' },
+  print: 'Печать / PDF',
   footer: 'PackMate · меньше вещей — больше дорог.',
   language: 'Язык',
 }
@@ -609,6 +636,15 @@ const T_BG: Translations = {
     'ski-gloves': 'Ски ръкавици', 'ski-goggles': 'Ски очила', beanie: 'Шапка',
     'hiking-boots': 'Туристически обувки', 'beach-towel': 'Плажна кърпа', necktie: 'Вратовръзка',
   },
+  pack: {
+    label: 'Прогрес на стягането',
+    progress: (n, total) => `${n} / ${total} събрани`,
+    allPacked: 'Всичко е събрано — готови сте!',
+    clear: 'Изчисти отметките',
+    checkAria: (name) => `Отбележи „${name}“ като събрано`,
+  },
+  share: { button: 'Сподели', copied: 'Връзката е копирана!' },
+  print: 'Печат / PDF',
   footer: 'PackMate · стягай леко, пътувай далече.',
   language: 'Език',
 }
@@ -736,17 +772,133 @@ function uid(): string {
   )
 }
 
+// Clock read kept module-level (like uid) so it stays out of render.
+function now(): number {
+  return Date.now()
+}
+
+/* -------------------- packing progress (check-off) -------------------- */
+
+const PACKED_KEY = 'packmate.packed.v1'
+
+function loadPacked(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(PACKED_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function savePackedToStorage(packed: Record<string, boolean>) {
+  try {
+    localStorage.setItem(PACKED_KEY, JSON.stringify(packed))
+  } catch { /* ignore */ }
+}
+
+/* -------------------- shareable trip links -------------------- */
+
+// Compact, URL-safe base64 encoding of a trip so it can travel in a query
+// string and reproduce the exact setup on any device. Keys kept short.
+function encodeTrip(state: AppState, lang: Lang): string {
+  const payload = {
+    v: 2, l: lang,
+    d: state.days, g: state.gender,
+    r: state.travelerType, t: state.travelType,
+    o: state.overrides,
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(payload))
+  let bin = ''
+  bytes.forEach((b) => { bin += String.fromCharCode(b) })
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function decodeTrip(param: string): { state: AppState; lang?: Lang } | null {
+  try {
+    const b64 = param.replace(/-/g, '+').replace(/_/g, '/')
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    const p = JSON.parse(new TextDecoder().decode(bytes))
+    const lang: Lang | undefined =
+      p?.l === 'en' || p?.l === 'ru' || p?.l === 'bg' ? p.l : undefined
+    return {
+      state: {
+        days: clamp(Number(p?.d) || 7, 1, 21),
+        gender: p?.g === 'female' ? 'female' : 'male',
+        travelerType: ['lean', 'it', 'prepared'].includes(p?.r) ? p.r : 'prepared',
+        travelType: ['city', 'summer', 'ski', 'hiking', 'business'].includes(p?.t) ? p.t : 'city',
+        overrides: p?.o && typeof p.o === 'object' ? p.o : {},
+      },
+      lang,
+    }
+  } catch {
+    return null
+  }
+}
+
+// Read a shared trip from the URL (?t=...) once at startup, then strip the
+// param so ordinary editing + local persistence resume afterwards.
+function readUrlBoot(): { state: AppState; lang?: Lang } | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const raw = params.get('t')
+    if (!raw) return null
+    const decoded = decodeTrip(raw)
+    if (decoded) {
+      params.delete('t')
+      const qs = params.toString()
+      window.history.replaceState(
+        null, '',
+        window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
+      )
+    }
+    return decoded
+  } catch {
+    return null
+  }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch { /* fall through to legacy path */ }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.position = 'fixed'
+    ta.style.opacity = '0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    return ok
+  } catch {
+    return false
+  }
+}
+
+const URL_BOOT = readUrlBoot()
+const BOOT_STATE: AppState = URL_BOOT?.state ?? loadState()
+
 /* ============================================================ COMPONENT ============================================================ */
 
 function App() {
-  const [lang, setLang] = useState<Lang>(() => guessLanguage())
-  const [days, setDays] = useState<number>(() => loadState().days)
-  const [gender, setGender] = useState<Gender>(() => loadState().gender)
-  const [travelerType, setTravelerType] = useState<TravelerType>(() => loadState().travelerType)
-  const [travelType, setTravelType] = useState<TravelType>(() => loadState().travelType)
-  const [overrides, setOverrides] = useState<Record<string, number>>(() => loadState().overrides)
+  const [lang, setLang] = useState<Lang>(() => URL_BOOT?.lang ?? guessLanguage())
+  const [days, setDays] = useState<number>(() => BOOT_STATE.days)
+  const [gender, setGender] = useState<Gender>(() => BOOT_STATE.gender)
+  const [travelerType, setTravelerType] = useState<TravelerType>(() => BOOT_STATE.travelerType)
+  const [travelType, setTravelType] = useState<TravelType>(() => BOOT_STATE.travelType)
+  const [overrides, setOverrides] = useState<Record<string, number>>(() => BOOT_STATE.overrides)
   const [snapshots, setSnapshots] = useState<Snapshot[]>(() => loadSnapshots())
   const [snapshotName, setSnapshotName] = useState('')
+  const [packed, setPacked] = useState<Record<string, boolean>>(() => loadPacked())
+  const [shareStatus, setShareStatus] = useState<'idle' | 'copied'>('idle')
 
   const t = TRANSLATIONS[lang]
 
@@ -754,6 +906,11 @@ function App() {
   useEffect(() => {
     saveStateToStorage({ days, gender, travelerType, travelType, overrides })
   }, [days, gender, travelerType, travelType, overrides])
+
+  // Persist packing progress (kept separate from trip config + snapshots).
+  useEffect(() => {
+    savePackedToStorage(packed)
+  }, [packed])
 
   useEffect(() => {
     try { localStorage.setItem(LANG_KEY, lang) } catch { /* ignore */ }
@@ -825,6 +982,38 @@ function App() {
     [activeItems],
   )
 
+  // Packing progress counts only items you are actually bringing (qty > 0).
+  const { packedCount, packableCount } = useMemo(() => {
+    let packableCount = 0
+    let packedCount = 0
+    for (const it of activeItems) {
+      if (getQty(it) <= 0) continue
+      packableCount++
+      if (packed[it.id]) packedCount++
+    }
+    return { packedCount, packableCount }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeItems, overrides, days, packed])
+
+  const packPct = packableCount ? (packedCount / packableCount) * 100 : 0
+
+  const togglePacked = (id: string) =>
+    setPacked((prev) => ({ ...prev, [id]: !prev[id] }))
+
+  const clearPacked = () => setPacked({})
+
+  async function shareTrip() {
+    const url =
+      `${window.location.origin}${window.location.pathname}` +
+      `?t=${encodeTrip({ days, gender, travelerType, travelType, overrides }, lang)}`
+    if (await copyText(url)) {
+      setShareStatus('copied')
+      window.setTimeout(() => setShareStatus('idle'), 2000)
+    }
+  }
+
+  const printList = () => window.print()
+
   /* -------------------- snapshot handlers -------------------- */
 
   function saveSnapshot() {
@@ -832,7 +1021,7 @@ function App() {
     const snap: Snapshot = {
       id: uid(),
       name,
-      savedAt: Date.now(),
+      savedAt: now(),
       state: { days, gender, travelerType, travelType, overrides },
     }
     const next = [snap, ...snapshots].slice(0, 20)
@@ -869,6 +1058,14 @@ function App() {
       <style>{packmateCss}</style>
       <main className="pm-app">
         <div className="pm-hero-bg" aria-hidden />
+
+        <div className="pm-print-head" aria-hidden>
+          <strong>PackMate</strong> — {t.travelTypes[travelType].emoji} {t.travelTypes[travelType].name}
+          {' · '}{t.travelers[travelerType].emoji} {t.travelers[travelerType].name}
+          {' · '}{days} {days === 1 ? t.controls.day : t.controls.days}
+          {' · '}{totalItems} {t.kpi.items}
+          {' · '}{totalWeight.toFixed(1)} kg · {totalVolume.toFixed(1)} L
+        </div>
 
         <header className="pm-hero">
           <div className="pm-hero-left">
@@ -1012,11 +1209,60 @@ function App() {
         <section className="pm-grid">
           <div className="pm-items" aria-label={t.list.title}>
             <div className="pm-items-head">
-              <h2 className="pm-h2">{t.list.title}</h2>
-              <span className="pm-muted">
-                {t.list.breakdown(activeItems.length, usedCategoriesCount, days)}
-              </span>
+              <div className="pm-items-head-main">
+                <h2 className="pm-h2">{t.list.title}</h2>
+                <span className="pm-muted">
+                  {t.list.breakdown(activeItems.length, usedCategoriesCount, days)}
+                </span>
+              </div>
+              <div className="pm-item-tools">
+                <button
+                  type="button"
+                  className="pm-btn pm-btn-sm pm-tool-btn"
+                  onClick={shareTrip}
+                >
+                  {shareStatus === 'copied' ? `✅ ${t.share.copied}` : `🔗 ${t.share.button}`}
+                </button>
+                <button
+                  type="button"
+                  className="pm-btn pm-btn-sm pm-tool-btn"
+                  onClick={printList}
+                >
+                  🖨️ {t.print}
+                </button>
+              </div>
             </div>
+
+            {packableCount > 0 && (
+              <div className="pm-progress">
+                <div className="pm-progress-head">
+                  <span className="pm-progress-label">
+                    {packedCount >= packableCount
+                      ? `🎉 ${t.pack.allPacked}`
+                      : t.pack.progress(packedCount, packableCount)}
+                  </span>
+                  {packedCount > 0 && (
+                    <button
+                      type="button"
+                      className="pm-btn pm-btn-link pm-progress-clear"
+                      onClick={clearPacked}
+                    >
+                      {t.pack.clear}
+                    </button>
+                  )}
+                </div>
+                <div
+                  className="pm-progress-track"
+                  role="progressbar"
+                  aria-label={t.pack.label}
+                  aria-valuenow={packedCount}
+                  aria-valuemin={0}
+                  aria-valuemax={packableCount}
+                >
+                  <div className="pm-progress-fill" style={{ width: `${packPct}%` }} />
+                </div>
+              </div>
+            )}
 
             {CATEGORY_ORDER.map((cat) => {
               const itemsInCat = activeItems.filter((it) => it.category === cat)
@@ -1043,11 +1289,13 @@ function App() {
                       const lowOnScaling =
                         !it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2)
                       const itemName = t.items[it.id] ?? it.id
+                      const isPacked = !!packed[it.id]
                       return (
                         <li
                           key={it.id}
                           className={[
                             'pm-item',
+                            isPacked ? 'pm-item-packed' : '',
                             overPacked || fixedOverpacked ? 'pm-item-warn' : '',
                             essentialMissing ? 'pm-item-danger' : '',
                             lowOnScaling ? 'pm-item-low' : '',
@@ -1055,6 +1303,13 @@ function App() {
                             .filter(Boolean)
                             .join(' ')}
                         >
+                          <input
+                            type="checkbox"
+                            className="pm-check"
+                            checked={isPacked}
+                            onChange={() => togglePacked(it.id)}
+                            aria-label={t.pack.checkAria(itemName)}
+                          />
                           <div className="pm-item-emoji" aria-hidden>{it.emoji}</div>
 
                           <div className="pm-item-info">
@@ -1329,9 +1584,26 @@ function LanguagePicker({
   label: string
 }) {
   const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
   const current = LANGS.find((l) => l.code === lang) || LANGS[0]
+
+  // Close the menu on outside click or Escape.
+  useEffect(() => {
+    if (!open) return
+    const onDocClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDocClick)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDocClick)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
   return (
-    <div className={`pm-lang ${open ? 'pm-lang-open' : ''}`}>
+    <div ref={ref} className={`pm-lang ${open ? 'pm-lang-open' : ''}`}>
       <button
         type="button"
         className="pm-lang-btn"
@@ -1755,7 +2027,7 @@ const packmateCss = `
 .pm-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .pm-item {
   display: grid;
-  grid-template-columns: 50px 1fr auto;
+  grid-template-columns: auto 50px 1fr auto;
   gap: 14px; align-items: center;
   padding: 12px 14px;
   border: 1px solid var(--pm-border);
@@ -1979,9 +2251,69 @@ const packmateCss = `
   .pm-controls { grid-template-columns: 1fr; }
   .pm-control-span-2 { grid-column: 1; }
   .pm-tiles { grid-template-columns: 1fr; }
-  .pm-item { grid-template-columns: 44px 1fr; grid-template-rows: auto auto; padding: 10px 12px; }
+  .pm-item { grid-template-columns: auto 44px 1fr; grid-template-rows: auto auto; padding: 10px 12px; }
   .pm-item-emoji { width: 44px; height: 44px; font-size: 24px; }
   .pm-qty { grid-column: 1 / -1; justify-content: flex-end; }
+}
+
+/* ========== packing list header tools ========== */
+.pm-items-head-main { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.pm-item-tools { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.pm-tool-btn { white-space: nowrap; }
+
+/* ========== packing progress ========== */
+.pm-progress { margin: 4px 0 2px; }
+.pm-progress-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.pm-progress-label { font-size: 13px; font-weight: 700; color: var(--pm-text); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.pm-progress-clear { font-size: 12px; padding: 2px 6px; }
+.pm-progress-track { height: 8px; background: var(--pm-track); border-radius: 999px; overflow: hidden; }
+.pm-progress-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
+  transition: width .4s cubic-bezier(.4,0,.2,1);
+}
+
+/* ========== check-off ========== */
+.pm-check {
+  width: 22px; height: 22px; margin: 0;
+  accent-color: var(--pm-accent);
+  cursor: pointer; flex-shrink: 0;
+}
+.pm-check:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; border-radius: 4px; }
+.pm-item-packed { opacity: .55; }
+.pm-item-packed .pm-item-name { text-decoration: line-through; text-decoration-color: var(--pm-muted); text-decoration-thickness: 2px; }
+.pm-item-packed .pm-item-emoji { filter: grayscale(.4); }
+
+/* ========== print ========== */
+.pm-print-head { display: none; }
+
+@media print {
+  .pm-app { max-width: none; margin: 0; padding: 0; color: #000; letter-spacing: 0; }
+  .pm-hero-bg, .pm-hero, .pm-warnings, .pm-controls, .pm-summary,
+  .pm-footer, .pm-item-tools, .pm-progress { display: none !important; }
+  .pm-print-head {
+    display: block !important; margin: 0 0 14px;
+    font-size: 13px; color: #000;
+    padding-bottom: 10px; border-bottom: 2px solid #000;
+  }
+  .pm-grid { grid-template-columns: 1fr; gap: 0; }
+  .pm-items { border: 0; box-shadow: none; padding: 0; border-radius: 0; }
+  .pm-items-head { margin-bottom: 4px; }
+  .pm-h2 { color: #000; }
+  .pm-cat { margin-top: 14px; break-inside: avoid; }
+  .pm-cat-head { border-color: #999; }
+  .pm-cat-name, .pm-cat-meta, .pm-item-name, .pm-item-meta { color: #000 !important; }
+  .pm-item {
+    background: #fff !important; border: 0; border-bottom: 1px solid #ddd;
+    border-radius: 0; padding: 6px 2px; box-shadow: none !important;
+    transform: none !important; break-inside: avoid;
+  }
+  .pm-item-packed { opacity: 1; }
+  .pm-item-emoji { border: 0; background: transparent; filter: none; width: 30px; height: 30px; font-size: 20px; }
+  .pm-check { width: 16px; height: 16px; -webkit-appearance: auto; appearance: auto; }
+  .pm-qty .pm-btn { display: none !important; }
+  .pm-qty-val { min-width: auto; color: #000; }
+  .pm-tag { color: #000; border: 1px solid #999; background: transparent; }
 }
 `
 
