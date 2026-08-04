@@ -1,73 +1,82 @@
-# React + TypeScript + Vite
+# PackMate 🧳
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Smart packing for any trip — powered by math, not vibes.**
 
-Currently, two official plugins are available:
+PackMate builds a right-sized packing list from a few inputs. Pick your trip
+length, traveler profile and trip type, and it scales each item's quantity,
+tracks total weight and volume in real time, recommends the luggage that fits,
+and flags when you've over- or under-packed.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+🔗 **Live:** [packmate.d85c.com](https://packmate.d85c.com)
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Algorithmic list** — per-day items (t-shirts, socks…) scale with trip
+  length; fixed items (passport, charger…) stay at one. Every quantity stays
+  editable, with a one-tap reset back to the suggestion.
+- **Profiles that reshape the list** — traveler profile (Lean / IT Pro /
+  Prepared), trip type (City / Beach / Ski / Hiking / Business) and a hygiene
+  profile add, hide and re-prioritize gear. Ski trips gain goggles; beach trips
+  gain sunscreen and a towel.
+- **Live telemetry** — running totals for item count, weight and volume, with
+  gauges marking the carry-on (25 L / 45 L) and 20 kg airline thresholds.
+- **Luggage recommendation** — backpack → carry-on → suitcase, chosen from the
+  packed volume.
+- **Smart warnings** — over the weight/volume limit, more than double a
+  suggested quantity, or an essential left at zero.
+- **Check off as you pack** — tick items as they go in the bag, with a live
+  progress bar; your progress is saved locally.
+- **Saved & shareable trips** — snapshot a setup to revisit later, or copy a
+  share link that reproduces the exact trip on any device.
+- **Print / save as PDF** — a clean, ink-friendly checklist to carry with you.
+- **Three languages** — English, Русский, Български, auto-detected from the
+  browser (with a manual switcher).
+- **Installable PWA** with automatic light/dark theming.
 
-## Expanding the ESLint configuration
+Everything runs client-side; trip state and snapshots live in `localStorage`.
+There is no account and no backend.
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Tech stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- [React 19](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- [Vite](https://vite.dev/) for dev/build
+- [lucide-react](https://lucide.dev/) icons
+- Deployed to GitHub Pages via GitHub Actions
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Getting started
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install       # install dependencies
+npm run dev       # start the dev server (http://localhost:5173)
+npm run build     # type-check + production build to dist/
+npm run preview   # preview the production build locally
+npm run lint      # run ESLint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Project structure
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+index.html                 # document head: SEO, Open Graph, PWA manifest link
+public/
+  favicon.svg              # app mark (the PackMate suitcase)
+  icon-192/512.png         # maskable PWA icons
+  apple-touch-icon.png     # iOS home-screen icon
+  og.png                   # 1200×630 social share card
+  manifest.webmanifest     # PWA manifest
+  CNAME                    # custom domain for GitHub Pages
+src/
+  App.tsx                  # the entire app: data, i18n, logic and UI
+  index.css                # page backdrop + font base
+  main.tsx                 # React entry point
+.github/workflows/deploy.yml  # build + deploy to GitHub Pages
+```
+
+`App.tsx` is intentionally self-contained: the item catalog, per-profile rules,
+the three translation tables, and all components live in one file with its
+styles inlined.
+
+## Deployment
+
+Every push to `main` triggers `.github/workflows/deploy.yml`, which builds the
+site and publishes `dist/` to GitHub Pages. The custom domain is set via
+`public/CNAME`.

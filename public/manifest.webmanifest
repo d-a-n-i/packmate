@@ -1,0 +1,34 @@
+{
+  "name": "PackMate — Smart Trip Packing Assistant",
+  "short_name": "PackMate",
+  "description": "Set your trip length, traveler profile and trip type — PackMate builds a right-sized packing list, tracks weight and volume, and recommends the luggage that fits.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "lang": "en",
+  "dir": "ltr",
+  "background_color": "#0a0a14",
+  "theme_color": "#6366f1",
+  "categories": ["travel", "productivity", "utilities"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}
