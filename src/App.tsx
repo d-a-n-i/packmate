@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 
 /* ============================================================ TYPES ============================================================ */
 
-type Lang = 'en' | 'ru' | 'bg'
+type Lang = 'en' | 'ru' | 'bg' | 'he'
 type Gender = 'male' | 'female'
 type TravelerType = 'lean' | 'it' | 'prepared'
 type TravelType = 'city' | 'summer' | 'ski' | 'hiking' | 'business'
@@ -296,7 +296,16 @@ const LANGS: { code: Lang; flag: string; name: string }[] = [
   { code: 'en', flag: '🇬🇧', name: 'English' },
   { code: 'ru', flag: '🇷🇺', name: 'Русский' },
   { code: 'bg', flag: '🇧🇬', name: 'Български' },
+  { code: 'he', flag: '🇮🇱', name: 'עברית' },
 ]
+
+/** Languages that render right-to-left. */
+const RTL_LANGS = new Set<Lang>(['he'])
+const isRtl = (l: Lang) => RTL_LANGS.has(l)
+const dirOf = (l: Lang): 'rtl' | 'ltr' => (isRtl(l) ? 'rtl' : 'ltr')
+
+/** Short day suffix used in auto-generated snapshot names. */
+const DAY_SUFFIX: Record<Lang, string> = { en: 'd', ru: 'дн', bg: 'дн', he: 'ד' }
 
 const TRAVELER_EMOJI: Record<TravelerType, string> = { lean: '🪶', it: '💻', prepared: '🛡️' }
 const TRAVEL_TYPE_EMOJI: Record<TravelType, string> = {
@@ -670,12 +679,134 @@ const T_BG: Translations = {
   language: 'Език',
 }
 
-const TRANSLATIONS: Record<Lang, Translations> = { en: T_EN, ru: T_RU, bg: T_BG }
+const T_HE: Translations = {
+  tagline: 'אריזה חכמה לכל טיול',
+  subtitle: 'מבוסס על חישוב, לא על תחושה. מגדירים את הטיול — הרשימה מסתדרת לבד.',
+  kpi: { items: 'פריטים', weight: 'משקל', volume: 'נפח' },
+  controls: {
+    tripLength: 'משך הטיול',
+    day: 'יום',
+    days: 'ימים',
+    traveler: 'פרופיל מטייל',
+    travelerHint: 'מכוונן את החיוניים',
+    gender: 'פרופיל היגיינה',
+    genderHint: 'מציג את הערכה המתאימה',
+    male: 'גבר',
+    female: 'אישה',
+    travelType: 'סוג הטיול',
+    travelTypeHint: 'מעצב את רשימת הציוד',
+  },
+  list: {
+    title: 'רשימת אריזה',
+    breakdown: (n, c, d) => `${n} פריטים · ${c} קטגוריות · ${d} ימים`,
+    pieces: (n) => `${n} ${n === 1 ? 'יחידה' : 'יחידות'}`,
+    fixedItem: 'פריט קבוע',
+    suggested: 'מומלץ',
+    perDay: '/ יום',
+    essential: 'חיוני',
+    genderTag: { male: 'גבר', female: 'אישה' },
+  },
+  telemetry: { title: 'נתונים בזמן אמת', volume: 'נפח', weight: 'משקל' },
+  luggage: {
+    title: 'מזוודה מומלצת',
+    backpack: 'תרמיל קומפקטי',
+    carryOn: 'טרולי יד',
+    suitcase: 'מזוודה גדולה',
+    capacityUpTo: (n) => `עד ${n} ליטר`,
+    capacityBetween: (a, b) => `${a} – ${b} ליטר`,
+    capacityOver: (n) => `${n} ליטר ומעלה`,
+    barBackpack: 'תרמיל',
+    barCarryOn: 'טרולי',
+    barSuitcase: 'מזוודה',
+    tier: (n) => `רמה ${n}/3`,
+  },
+  snapshots: {
+    title: 'טיולים שמורים',
+    placeholder: 'שם לטיול (למשל: סופ״ש בסופיה)',
+    save: 'שמירה',
+    empty: 'אין עדיין טיולים שמורים. שמרו את ההגדרה הנוכחית כדי להשוות בהמשך.',
+    load: 'טעינה',
+    delete: 'מחיקה',
+    autoSaved: 'נשמר אוטומטית',
+    confirmDelete: 'למחוק את הטיול השמור?',
+  },
+  warnings: {
+    overweight: (kg) => `המשקל הכולל הוא ${kg} ק"ג — מעל מכסת 20 ק"ג הרגילה של חברות התעופה.`,
+    overvolume: (l) => `הנפח הכולל הוא ${l} ליטר — מעבר לגודל של מזוודת יד, כדאי לצמצם.`,
+    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — יותר מפי שניים מ-${sugg} המומלצים.`,
+    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — הרבה מדי לפריט יחיד.`,
+    essential0: (emoji, name) => `${emoji} ${name} על 0 — אי אפשר בלי זה!`,
+    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: רק ${qty} ל-${days} ימים (מומלץ ${sugg}) — לא יספיק.`,
+  },
+  categories: {
+    documents: 'מסמכים וכסף',
+    electronics: 'אלקטרוניקה',
+    clothing: 'ביגוד',
+    outerwear: 'ביגוד עליון',
+    footwear: 'הנעלה',
+    toiletries: 'כלי רחצה',
+    health: 'בריאות ונוחות',
+    extras: 'עוד לדרך',
+    specialty: 'ציוד מיוחד',
+  },
+  travelers: {
+    lean:     { name: 'מינימלי',   tagline: 'רק ההכרחי, קליל ומהיר', emoji: TRAVELER_EMOJI.lean },
+    it:       { name: 'איש הייטק', tagline: 'ערכת טכנולוגיה מלאה',    emoji: TRAVELER_EMOJI.it },
+    prepared: { name: 'מוכן לכול', tagline: 'ערוך לכל תרחיש',         emoji: TRAVELER_EMOJI.prepared },
+  },
+  travelTypes: {
+    city:     { name: 'עירוני',    emoji: TRAVEL_TYPE_EMOJI.city },
+    summer:   { name: 'ים / קיץ',  emoji: TRAVEL_TYPE_EMOJI.summer },
+    ski:      { name: 'סקי / שלג', emoji: TRAVEL_TYPE_EMOJI.ski },
+    hiking:   { name: 'טרקים',     emoji: TRAVEL_TYPE_EMOJI.hiking },
+    business: { name: 'עסקים',     emoji: TRAVEL_TYPE_EMOJI.business },
+  },
+  items: {
+    passport: 'דרכון', wallet: 'ארנק', 'id-card': 'תעודת זהות',
+    'cash-cards': 'מזומן וכרטיסים', insurance: 'מסמכי ביטוח נסיעות',
+    phone: 'טלפון', charger: 'מטען לטלפון', 'power-adapter': 'מתאם חשמל',
+    headphones: 'אוזניות', laptop: 'מחשב נייד', 'laptop-charger': 'מטען למחשב נייד',
+    camera: 'מצלמה',
+    tshirts: 'חולצות טי', underwear: 'הלבשה תחתונה', socks: 'גרביים',
+    pants: 'מכנסיים / ג׳ינס', pajamas: 'פיג׳מה', swimwear: 'בגד ים',
+    sweater: 'סוודר / קפוצ׳ון', jacket: 'מעיל חם', 'rain-jacket': 'מעיל גשם',
+    sneakers: 'נעלי ספורט', sandals: 'סנדלים / כפכפים', 'dress-shoes': 'נעליים אלגנטיות',
+    toothbrush: 'מברשת שיניים', toothpaste: 'משחת שיניים',
+    soap: 'סבון / ג׳ל רחצה', shampoo: 'שמפו ומרכך',
+    deodorant: 'דאודורנט', sunscreen: 'קרם הגנה', chapstick: 'שפתון לחות',
+    shaving: 'ערכת גילוח', makeup: 'איפור והיגיינה',
+    medications: 'תרופות', 'first-aid': 'ערכת עזרה ראשונה',
+    'travel-pillow': 'כרית צוואר', 'sleep-mask': 'מסכת שינה ואטמי אוזניים',
+    'water-bottle': 'בקבוק מים רב-פעמי', book: 'ספר / קורא אלקטרוני',
+    sunglasses: 'משקפי שמש', 'day-backpack': 'תרמיל יום מתקפל',
+    umbrella: 'מטרייה קומפקטית',
+    'ski-gloves': 'כפפות סקי', 'ski-goggles': 'משקפי סקי', beanie: 'כובע צמר',
+    'hiking-boots': 'נעלי הליכה', 'beach-towel': 'מגבת חוף', necktie: 'עניבה',
+    'power-bank': 'סוללת גיבוי', shorts: 'מכנסיים קצרים',
+    'dress-shirt': 'חולצה מכופתרת', blazer: 'בלייזר / ז׳קט',
+    'hand-sanitizer': 'ג׳ל חיטוי לידיים', 'period-care': 'מוצרי היגיינה נשית',
+    'insect-repellent': 'דוחה יתושים',
+  },
+  pack: {
+    label: 'התקדמות האריזה',
+    progress: (n, total) => `${n} / ${total} ארוזים`,
+    allPacked: 'הכול ארוז — אפשר לצאת לדרך!',
+    clear: 'ניקוי הסימונים',
+    checkAria: (name) => `סימון ${name} כארוז`,
+  },
+  share: { button: 'שיתוף הטיול', copied: 'הקישור הועתק!' },
+  print: 'הדפסה / PDF',
+  footer: 'PackMate · לארוז קל, להגיע רחוק.',
+  language: 'שפה',
+}
+
+const TRANSLATIONS: Record<Lang, Translations> = { en: T_EN, ru: T_RU, bg: T_BG, he: T_HE }
 
 /* ============================================================ LANG DETECTION ============================================================ */
 
 const RUSSIAN_COUNTRIES = new Set(['ru', 'by', 'kz', 'kg', 'tj', 'tm', 'uz', 'az', 'am', 'ge', 'md', 'ua', 'ee', 'lv', 'lt'])
 const BG_TIMEZONES = new Set(['Europe/Sofia', 'Europe/Skopje'])
+const HE_TIMEZONES = new Set(['Asia/Jerusalem', 'Asia/Tel_Aviv'])
 const RU_TIMEZONES = new Set([
   // Russia
   'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Europe/Volgograd',
@@ -700,7 +831,7 @@ function guessLanguage(): Lang {
   if (typeof window === 'undefined') return 'en'
   try {
     const stored = localStorage.getItem('packmate.lang')
-    if (stored === 'en' || stored === 'ru' || stored === 'bg') return stored
+    if (stored === 'en' || stored === 'ru' || stored === 'bg' || stored === 'he') return stored
   } catch { /* ignore */ }
 
   const langs =
@@ -710,15 +841,19 @@ function guessLanguage(): Lang {
 
   for (const lang of langs) {
     const tag = lang.toLowerCase()
+    // 'he' is the modern code, 'iw' the legacy one some browsers still emit.
+    if (tag.startsWith('he') || tag.startsWith('iw')) return 'he'
     if (tag.startsWith('bg') || tag.startsWith('mk')) return 'bg'
     if (tag.startsWith('ru')) return 'ru'
     const country = tag.split('-')[1]
+    if (country === 'il') return 'he'
     if (country === 'bg' || country === 'mk') return 'bg'
     if (country && RUSSIAN_COUNTRIES.has(country)) return 'ru'
   }
 
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    if (HE_TIMEZONES.has(tz)) return 'he'
     if (BG_TIMEZONES.has(tz)) return 'bg'
     if (RU_TIMEZONES.has(tz)) return 'ru'
   } catch { /* ignore */ }
@@ -843,7 +978,7 @@ function decodeTrip(param: string): { state: AppState; lang?: Lang } | null {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
     const p = JSON.parse(new TextDecoder().decode(bytes))
     const lang: Lang | undefined =
-      p?.l === 'en' || p?.l === 'ru' || p?.l === 'bg' ? p.l : undefined
+      p?.l === 'en' || p?.l === 'ru' || p?.l === 'bg' || p?.l === 'he' ? p.l : undefined
     return {
       state: {
         days: clamp(Number(p?.d) || 7, 1, 21),
@@ -936,6 +1071,7 @@ function App() {
   useEffect(() => {
     try { localStorage.setItem(LANG_KEY, lang) } catch { /* ignore */ }
     document.documentElement.lang = lang
+    document.documentElement.dir = dirOf(lang)
   }, [lang])
 
   const activeItems = useMemo(
@@ -1061,7 +1197,7 @@ function App() {
   function autoSnapshotName(): string {
     const tt = t.travelTypes[travelType].name
     const tr = t.travelers[travelerType].name
-    return `${tt} · ${tr} · ${days}${lang === 'en' ? 'd' : lang === 'ru' ? 'дн' : 'дн'}`
+    return `${tt} · ${tr} · ${days}${DAY_SUFFIX[lang]}`
   }
 
   function loadSnapshot(snap: Snapshot) {
@@ -1084,7 +1220,7 @@ function App() {
   return (
     <>
       <style>{packmateCss}</style>
-      <main className="pm-app">
+      <main className="pm-app" dir={dirOf(lang)}>
         <div className="pm-hero-bg" aria-hidden />
 
         <div className="pm-print-head" aria-hidden>
@@ -1495,7 +1631,7 @@ function App() {
                         <div className="pm-muted pm-tiny">
                           {t.travelTypes[s.state.travelType].emoji} {t.travelTypes[s.state.travelType].name}
                           {' · '}{t.travelers[s.state.travelerType].emoji} {t.travelers[s.state.travelerType].name}
-                          {' · '}{s.state.days}{lang === 'en' ? 'd' : lang === 'ru' ? 'дн' : 'дн'}
+                          {' · '}{s.state.days}{DAY_SUFFIX[lang]}
                         </div>
                       </div>
                       <div className="pm-snapshot-actions">
@@ -1704,7 +1840,7 @@ const packmateCss = `
   max-width: 1180px;
   margin: 0 auto;
   padding: 28px 28px 56px;
-  text-align: left;
+  text-align: start;
   color: var(--pm-text);
   font: 15px/1.55 -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   letter-spacing: -0.005em;
@@ -1814,7 +1950,7 @@ const packmateCss = `
   border-radius: 14px;
   padding: 12px 18px;
   min-width: 108px;
-  text-align: right;
+  text-align: end;
   box-shadow: var(--pm-shadow-sm);
   transition: transform .2s ease, box-shadow .2s ease;
 }
@@ -1846,7 +1982,7 @@ const packmateCss = `
 .pm-lang-caret { font-size: 10px; opacity: .6; transition: transform .2s ease; }
 .pm-lang-open .pm-lang-caret { transform: rotate(180deg); }
 .pm-lang-menu {
-  position: absolute; right: 0; top: calc(100% + 6px);
+  position: absolute; inset-inline-end: 0; top: calc(100% + 6px);
   background: var(--pm-card); border: 1px solid var(--pm-border);
   border-radius: 12px; padding: 6px; margin: 0; list-style: none;
   box-shadow: var(--pm-shadow-lg);
@@ -1856,7 +1992,7 @@ const packmateCss = `
   width: 100%; display: flex; align-items: center; gap: 10px;
   background: transparent; border: 0; padding: 8px 10px;
   border-radius: 8px; cursor: pointer; font: inherit; font-size: 14px;
-  color: var(--pm-text); text-align: left;
+  color: var(--pm-text); text-align: start;
 }
 .pm-lang-item:hover { background: var(--pm-accent-bg); }
 .pm-lang-item-active { background: var(--pm-accent-bg); color: var(--pm-accent-strong); font-weight: 600; }
@@ -1918,6 +2054,7 @@ const packmateCss = `
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 8px; border-radius: 999px;
   outline: none; cursor: pointer;
+  direction: ltr; /* keep the 1→21 scale + fill LTR even on RTL pages */
 }
 .pm-range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
@@ -1936,7 +2073,7 @@ const packmateCss = `
   box-shadow: 0 4px 10px rgba(99,102,241,.45); cursor: grab;
 }
 .pm-range-scale {
-  position: relative; height: 15px;
+  position: relative; height: 15px; direction: ltr;
   margin-top: 10px; color: var(--pm-muted); font-size: 12px;
   font-variant-numeric: tabular-nums; font-weight: 600;
 }
@@ -2185,7 +2322,7 @@ const packmateCss = `
 .pm-gauge-head { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 600; }
 .pm-gauge-value { font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 .pm-gauge-track {
-  position: relative; height: 10px;
+  position: relative; height: 10px; direction: ltr;
   background: var(--pm-track);
   border-radius: 999px; overflow: visible;
 }
@@ -2230,10 +2367,10 @@ const packmateCss = `
 .pm-luggage-seg {
   padding: 9px 4px; text-align: center;
   color: var(--pm-muted);
-  border-right: 1px solid var(--pm-border);
+  border-inline-end: 1px solid var(--pm-border);
   transition: background .25s ease, color .25s ease;
 }
-.pm-luggage-seg:last-child { border-right: 0; }
+.pm-luggage-seg:last-child { border-inline-end: 0; }
 .pm-luggage-seg.on {
   background: linear-gradient(135deg, var(--pm-accent) 0%, var(--pm-accent-2) 100%);
   color: #ffffff;
@@ -2286,7 +2423,7 @@ const packmateCss = `
   .pm-hero-left { align-items: flex-start; }
   .pm-hero-right { align-items: stretch; flex-direction: column-reverse; }
   .pm-kpis { justify-content: stretch; }
-  .pm-kpi { flex: 1; text-align: left; min-width: 0; }
+  .pm-kpi { flex: 1; text-align: start; min-width: 0; }
   .pm-title { font-size: 44px; }
   .pm-controls { grid-template-columns: 1fr; }
   .pm-control-span-2 { grid-column: 1; }
@@ -2354,6 +2491,16 @@ const packmateCss = `
   .pm-qty .pm-btn { display: none !important; }
   .pm-qty-val { min-width: auto; color: #000; }
   .pm-tag { color: #000; border: 1px solid #999; background: transparent; }
+}
+
+/* ========== RTL polish ========== */
+/* Most mirroring is automatic via dir="rtl" + logical properties above;
+   these handle the few physical transforms/gradients that can't be. */
+.pm-app[dir="rtl"] .pm-snapshot:hover { transform: translateX(-2px); }
+.pm-app[dir="rtl"] .pm-card-glow {
+  background:
+    radial-gradient(80% 100% at 100% 0%, var(--pm-accent-bg) 0%, transparent 50%),
+    var(--pm-card);
 }
 `
 
