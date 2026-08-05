@@ -220,6 +220,7 @@ interface Translations {
   tagline: string
   subtitle: string
   kpi: { items: string; weight: string; volume: string }
+  units: { kg: string; l: string }
   controls: {
     tripLength: string
     day: string
@@ -320,6 +321,7 @@ const T_EN: Translations = {
   tagline: 'Smart packing for any trip',
   subtitle: 'Powered by math, not vibes. Set your trip, the list balances itself.',
   kpi: { items: 'Items', weight: 'Weight', volume: 'Volume' },
+  units: { kg: 'kg', l: 'L' },
   controls: {
     tripLength: 'Trip length',
     day: 'day',
@@ -441,6 +443,7 @@ const T_RU: Translations = {
   tagline: 'Умная упаковка для любой поездки',
   subtitle: 'Расчёт, а не интуиция. Задаёте параметры — список считается сам.',
   kpi: { items: 'Предметы', weight: 'Вес', volume: 'Объём' },
+  units: { kg: 'кг', l: 'л' },
   controls: {
     tripLength: 'Длительность',
     day: 'день',
@@ -562,6 +565,7 @@ const T_BG: Translations = {
   tagline: 'Умно стягане за всяко пътуване',
   subtitle: 'Сметката е наука, не интуиция. Задаваш дните — списъкът се сглобява сам.',
   kpi: { items: 'Предмети', weight: 'Тегло', volume: 'Обем' },
+  units: { kg: 'кг', l: 'л' },
   controls: {
     tripLength: 'Дължина на пътуването',
     day: 'ден',
@@ -681,15 +685,16 @@ const T_BG: Translations = {
 
 const T_HE: Translations = {
   tagline: 'אריזה חכמה לכל טיול',
-  subtitle: 'מבוסס על חישוב, לא על תחושה. מגדירים את הטיול — הרשימה מסתדרת לבד.',
+  subtitle: 'מבוסס על חישוב, לא על תחושה. מגדירים את הטיול והרשימה מסתדרת לבד.',
   kpi: { items: 'פריטים', weight: 'משקל', volume: 'נפח' },
+  units: { kg: 'ק"ג', l: 'ל׳' },
   controls: {
     tripLength: 'משך הטיול',
     day: 'יום',
     days: 'ימים',
     traveler: 'פרופיל מטייל',
     travelerHint: 'מכוונן את החיוניים',
-    gender: 'פרופיל היגיינה',
+    gender: 'מגדר',
     genderHint: 'מציג את הערכה המתאימה',
     male: 'גבר',
     female: 'אישה',
@@ -709,13 +714,13 @@ const T_HE: Translations = {
   telemetry: { title: 'נתונים בזמן אמת', volume: 'נפח', weight: 'משקל' },
   luggage: {
     title: 'מזוודה מומלצת',
-    backpack: 'תרמיל קומפקטי',
-    carryOn: 'טרולי יד',
+    backpack: 'תיק גב',
+    carryOn: 'טרולי',
     suitcase: 'מזוודה גדולה',
     capacityUpTo: (n) => `עד ${n} ליטר`,
     capacityBetween: (a, b) => `${a} – ${b} ליטר`,
     capacityOver: (n) => `${n} ליטר ומעלה`,
-    barBackpack: 'תרמיל',
+    barBackpack: 'תיק גב',
     barCarryOn: 'טרולי',
     barSuitcase: 'מזוודה',
     tier: (n) => `רמה ${n}/3`,
@@ -1228,7 +1233,7 @@ function App() {
           {' · '}{t.travelers[travelerType].emoji} {t.travelers[travelerType].name}
           {' · '}{days} {days === 1 ? t.controls.day : t.controls.days}
           {' · '}{totalItems} {t.kpi.items}
-          {' · '}{totalWeight.toFixed(1)} kg · {totalVolume.toFixed(1)} L
+          {' · '}{totalWeight.toFixed(1)} {t.units.kg} · {totalVolume.toFixed(1)} {t.units.l}
         </div>
 
         <header className="pm-hero">
@@ -1247,8 +1252,8 @@ function App() {
             <LanguagePicker lang={lang} onChange={setLang} label={t.language} />
             <div className="pm-kpis">
               <Kpi label={t.kpi.items}  value={String(totalItems)} accent />
-              <Kpi label={t.kpi.weight} value={`${totalWeight.toFixed(2)} kg`} />
-              <Kpi label={t.kpi.volume} value={`${totalVolume.toFixed(2)} L`} />
+              <Kpi label={t.kpi.weight} value={`${totalWeight.toFixed(2)} ${t.units.kg}`} />
+              <Kpi label={t.kpi.volume} value={`${totalVolume.toFixed(2)} ${t.units.l}`} />
             </div>
           </div>
         </header>
@@ -1443,7 +1448,7 @@ function App() {
                     <span className="pm-cat-emoji" aria-hidden>{CATEGORY_EMOJI[cat]}</span>
                     <h3 className="pm-cat-name">{t.categories[cat]}</h3>
                     <span className="pm-cat-meta">
-                      {t.list.pieces(catQty)} · {catWeight.toFixed(2)} kg
+                      {t.list.pieces(catQty)} · {catWeight.toFixed(2)} {t.units.kg}
                     </span>
                   </div>
                   <ul className="pm-list">
@@ -1458,26 +1463,36 @@ function App() {
                         !it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2)
                       const itemName = t.items[it.id] ?? it.id
                       const isPacked = !!packed[it.id]
+                      const isZero = qty === 0
                       return (
                         <li
                           key={it.id}
                           className={[
                             'pm-item',
-                            isPacked ? 'pm-item-packed' : '',
-                            overPacked || fixedOverpacked ? 'pm-item-warn' : '',
-                            essentialMissing ? 'pm-item-danger' : '',
-                            lowOnScaling ? 'pm-item-low' : '',
+                            isZero ? 'pm-item-zero' : '',
+                            !isZero && isPacked ? 'pm-item-packed' : '',
+                            !isZero && (overPacked || fixedOverpacked) ? 'pm-item-warn' : '',
+                            !isZero && lowOnScaling ? 'pm-item-low' : '',
                           ]
                             .filter(Boolean)
                             .join(' ')}
                         >
-                          <input
-                            type="checkbox"
-                            className="pm-check"
-                            checked={isPacked}
-                            onChange={() => togglePacked(it.id)}
-                            aria-label={t.pack.checkAria(itemName)}
-                          />
+                          {isZero ? (
+                            <span
+                              className={`pm-check-x ${essentialMissing ? 'pm-check-x-danger' : ''}`}
+                              aria-hidden
+                            >
+                              ✕
+                            </span>
+                          ) : (
+                            <input
+                              type="checkbox"
+                              className="pm-check"
+                              checked={isPacked}
+                              onChange={() => togglePacked(it.id)}
+                              aria-label={t.pack.checkAria(itemName)}
+                            />
+                          )}
                           <div className="pm-item-emoji" aria-hidden>{it.emoji}</div>
 
                           <div className="pm-item-info">
@@ -1504,9 +1519,9 @@ function App() {
                                 </>
                               )}
                               <span className="pm-dot">•</span>
-                              {(qty * it.weightKg).toFixed(2)} kg
+                              {(qty * it.weightKg).toFixed(2)} {t.units.kg}
                               <span className="pm-dot">•</span>
-                              {(qty * it.volumeL).toFixed(2)} L
+                              {(qty * it.volumeL).toFixed(2)} {t.units.l}
                             </div>
                           </div>
 
@@ -1556,7 +1571,7 @@ function App() {
 
               <Gauge
                 label={t.telemetry.volume}
-                value={`${totalVolume.toFixed(2)} L`}
+                value={`${totalVolume.toFixed(2)} ${t.units.l}`}
                 pct={volumePct}
                 color="var(--pm-accent)"
                 ticks={[
@@ -1566,7 +1581,7 @@ function App() {
               />
               <Gauge
                 label={t.telemetry.weight}
-                value={`${totalWeight.toFixed(2)} kg`}
+                value={`${totalWeight.toFixed(2)} ${t.units.kg}`}
                 pct={weightPct}
                 color={totalWeight > 20 ? 'var(--pm-danger)' : 'var(--pm-success)'}
                 ticks={[{ at: (20 / 25) * 100, label: '20kg' }]}
@@ -2460,6 +2475,31 @@ const packmateCss = `
 .pm-item-packed { opacity: .55; }
 .pm-item-packed .pm-item-name { text-decoration: line-through; text-decoration-color: var(--pm-muted); text-decoration-thickness: 2px; }
 .pm-item-packed .pm-item-emoji { filter: grayscale(.4); }
+
+/* zero-quantity items are "excluded": greyed out, with a disabled ✕ box
+   in place of the pack checkbox (red ✕ when it's a missing essential). */
+.pm-item-zero { background: var(--pm-bg); }
+.pm-item-zero:hover { transform: none; box-shadow: none; border-color: var(--pm-border); }
+.pm-item-zero .pm-item-emoji { filter: grayscale(1); opacity: .5; }
+.pm-item-zero:hover .pm-item-emoji { transform: none; }
+.pm-item-zero .pm-item-name {
+  color: var(--pm-muted);
+  text-decoration: line-through; text-decoration-color: var(--pm-border-strong); text-decoration-thickness: 2px;
+}
+.pm-item-zero .pm-item-name .pm-tag { opacity: .55; }
+.pm-item-zero .pm-item-meta { color: var(--pm-muted); opacity: .75; }
+.pm-check-x {
+  width: 22px; height: 22px; flex-shrink: 0;
+  display: grid; place-items: center;
+  border: 1px solid var(--pm-border-strong); border-radius: 6px;
+  background: var(--pm-bg); color: var(--pm-muted);
+  font-size: 13px; font-weight: 800; line-height: 1;
+  cursor: not-allowed; user-select: none;
+}
+.pm-check-x-danger {
+  color: var(--pm-danger);
+  border-color: color-mix(in srgb, var(--pm-danger) 55%, transparent);
+}
 
 /* ========== print ========== */
 .pm-print-head { display: none; }
