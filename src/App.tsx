@@ -103,7 +103,8 @@ const ITEMS: PackItem[] = [
   // Electronics
   { id: 'phone',          emoji: '📱', category: 'electronics', basePerDay: 0, weightKg: 0.20, volumeL: 0.15, fixed: true, essential: true },
   { id: 'charger',        emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.12, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'power-adapter',  emoji: '🔋', category: 'electronics', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true },
+  { id: 'power-adapter',  emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true },
+  { id: 'power-bank',     emoji: '🔋', category: 'electronics', basePerDay: 0, weightKg: 0.35, volumeL: 0.40, fixed: true },
   { id: 'headphones',     emoji: '🎧', category: 'electronics', basePerDay: 0, weightKg: 0.25, volumeL: 0.60, fixed: true },
   { id: 'laptop',         emoji: '💻', category: 'electronics', basePerDay: 0, weightKg: 1.50, volumeL: 2.00, fixed: true },
   { id: 'laptop-charger', emoji: '⚡', category: 'electronics', basePerDay: 0, weightKg: 0.40, volumeL: 0.50, fixed: true },
@@ -114,6 +115,8 @@ const ITEMS: PackItem[] = [
   { id: 'underwear', emoji: '🩲', category: 'clothing', basePerDay: 1,    weightKg: 0.05, volumeL: 0.15, fixed: false, essential: true },
   { id: 'socks',     emoji: '🧦', category: 'clothing', basePerDay: 1,    weightKg: 0.06, volumeL: 0.20, fixed: false, essential: true },
   { id: 'pants',     emoji: '👖', category: 'clothing', basePerDay: 0.34, weightKg: 0.55, volumeL: 1.20, fixed: false },
+  { id: 'shorts',      emoji: '🩳', category: 'clothing', basePerDay: 0.30, weightKg: 0.25, volumeL: 0.60, fixed: false },
+  { id: 'dress-shirt', emoji: '👔', category: 'clothing', basePerDay: 0.50, weightKg: 0.25, volumeL: 0.80, fixed: false, onlyTravelTypes: ['city', 'business'] },
   { id: 'pajamas',   emoji: '🛌', category: 'clothing', basePerDay: 0,    weightKg: 0.30, volumeL: 0.70, fixed: true },
   { id: 'swimwear',  emoji: '🩳', category: 'clothing', basePerDay: 0,    weightKg: 0.15, volumeL: 0.30, fixed: true },
 
@@ -121,6 +124,7 @@ const ITEMS: PackItem[] = [
   { id: 'sweater',     emoji: '🧶', category: 'outerwear', basePerDay: 0, weightKg: 0.50, volumeL: 1.80, fixed: true },
   { id: 'jacket',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.90, volumeL: 3.50, fixed: true },
   { id: 'rain-jacket', emoji: '☔', category: 'outerwear', basePerDay: 0, weightKg: 0.30, volumeL: 0.80, fixed: true },
+  { id: 'blazer',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.70, volumeL: 3.00, fixed: true, onlyTravelTypes: ['business'] },
 
   // Footwear
   { id: 'sneakers',    emoji: '👟', category: 'footwear', basePerDay: 0, weightKg: 0.80, volumeL: 2.50, fixed: true, essential: true },
@@ -135,12 +139,15 @@ const ITEMS: PackItem[] = [
   { id: 'deodorant',  emoji: '🌬️', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
   { id: 'sunscreen',  emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
   { id: 'chapstick',  emoji: '💋', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.04, fixed: true },
+  { id: 'hand-sanitizer', emoji: '🫧', category: 'toiletries', basePerDay: 0, weightKg: 0.08, volumeL: 0.10, fixed: true },
+  { id: 'period-care',    emoji: '🌸', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true, gender: 'female' },
   { id: 'shaving',    emoji: '🪒', category: 'toiletries', basePerDay: 0, weightKg: 0.35, volumeL: 0.80, fixed: true, gender: 'male' },
   { id: 'makeup',     emoji: '💄', category: 'toiletries', basePerDay: 0, weightKg: 0.55, volumeL: 1.20, fixed: true, gender: 'female' },
 
   // Health & Comfort
   { id: 'medications',   emoji: '💊', category: 'health', basePerDay: 0, weightKg: 0.15, volumeL: 0.30, fixed: true, essential: true },
   { id: 'first-aid',     emoji: '⛑️', category: 'health', basePerDay: 0, weightKg: 0.25, volumeL: 0.50, fixed: true },
+  { id: 'insect-repellent', emoji: '🦟', category: 'health', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true, essential: true, onlyTravelTypes: ['summer', 'hiking'] },
   { id: 'travel-pillow', emoji: '💺', category: 'health', basePerDay: 0, weightKg: 0.30, volumeL: 2.00, fixed: true },
   { id: 'sleep-mask',    emoji: '😴', category: 'health', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true },
 
@@ -164,18 +171,18 @@ const ITEMS: PackItem[] = [
 
 const TRAVEL_HIDE: Record<TravelType, string[]> = {
   city:     [],
-  summer:   ['jacket', 'sweater', 'rain-jacket', 'pajamas'],
-  ski:      ['swimwear', 'sandals', 'dress-shoes'],
+  summer:   ['jacket', 'sweater', 'rain-jacket'],
+  ski:      ['swimwear', 'sandals', 'dress-shoes', 'shorts'],
   hiking:   ['dress-shoes', 'swimwear', 'sandals'],
-  business: ['swimwear', 'sandals'],
+  business: ['swimwear', 'sandals', 'shorts'],
 }
 
 const TRAVEL_ESSENTIALS: Record<TravelType, string[]> = {
   city:     [],
-  summer:   ['sunscreen', 'sunglasses', 'sandals', 'swimwear', 'beach-towel'],
+  summer:   ['sunscreen', 'sunglasses', 'sandals', 'swimwear', 'beach-towel', 'shorts'],
   ski:      ['jacket', 'sweater', 'ski-gloves', 'ski-goggles', 'beanie'],
-  hiking:   ['water-bottle', 'day-backpack', 'sneakers', 'hiking-boots', 'sunscreen'],
-  business: ['dress-shoes', 'necktie', 'pants', 'laptop'],
+  hiking:   ['water-bottle', 'day-backpack', 'hiking-boots', 'sunscreen'],
+  business: ['dress-shoes', 'dress-shirt', 'blazer', 'pants', 'laptop'],
 }
 
 const TRAVELER_HIDE: Record<TravelerType, string[]> = {
@@ -186,8 +193,8 @@ const TRAVELER_HIDE: Record<TravelerType, string[]> = {
 
 const TRAVELER_ESSENTIALS: Record<TravelerType, string[]> = {
   lean:     [],
-  it:       ['laptop', 'laptop-charger', 'headphones', 'power-adapter'],
-  prepared: ['first-aid', 'medications', 'day-backpack', 'umbrella', 'sleep-mask', 'insurance', 'water-bottle'],
+  it:       ['laptop', 'laptop-charger', 'headphones', 'power-adapter', 'power-bank'],
+  prepared: ['first-aid', 'medications', 'day-backpack', 'umbrella', 'sleep-mask', 'insurance', 'water-bottle', 'power-bank', 'hand-sanitizer'],
 }
 
 function resolveItems(
@@ -200,7 +207,9 @@ function resolveItems(
   return ITEMS.flatMap((it) => {
     if (it.gender && it.gender !== gender) return []
     if (it.onlyTravelTypes && !it.onlyTravelTypes.includes(travelType)) return []
-    if (hideSet.has(it.id)) return []
+    // A trip/traveler essential is never hidden by the *other* axis' hide list
+    // (e.g. Lean hides the sweater, but a Ski trip still needs it).
+    if (hideSet.has(it.id) && !essentialSet.has(it.id)) return []
     return [{ ...it, essential: !!it.essential || essentialSet.has(it.id) } as ResolvedItem]
   })
 }
@@ -401,6 +410,10 @@ const T_EN: Translations = {
     umbrella: 'Compact Umbrella',
     'ski-gloves': 'Ski Gloves', 'ski-goggles': 'Ski Goggles', beanie: 'Beanie / Wool Hat',
     'hiking-boots': 'Hiking Boots', 'beach-towel': 'Beach Towel', necktie: 'Necktie',
+    'power-bank': 'Power Bank', shorts: 'Shorts',
+    'dress-shirt': 'Dress Shirt / Blouse', blazer: 'Blazer / Sport Coat',
+    'hand-sanitizer': 'Hand Sanitizer', 'period-care': 'Period Products',
+    'insect-repellent': 'Insect Repellent',
   },
   pack: {
     label: 'Packing progress',
@@ -518,6 +531,10 @@ const T_RU: Translations = {
     umbrella: 'Компактный зонт',
     'ski-gloves': 'Лыжные перчатки', 'ski-goggles': 'Лыжные очки', beanie: 'Шапка',
     'hiking-boots': 'Походные ботинки', 'beach-towel': 'Пляжное полотенце', necktie: 'Галстук',
+    'power-bank': 'Внешний аккумулятор', shorts: 'Шорты',
+    'dress-shirt': 'Рубашка / блузка', blazer: 'Пиджак',
+    'hand-sanitizer': 'Антисептик для рук', 'period-care': 'Средства гигиены',
+    'insect-repellent': 'Средство от насекомых',
   },
   pack: {
     label: 'Прогресс сборов',
@@ -635,6 +652,10 @@ const T_BG: Translations = {
     umbrella: 'Компактен чадър',
     'ski-gloves': 'Ски ръкавици', 'ski-goggles': 'Ски очила', beanie: 'Шапка',
     'hiking-boots': 'Туристически обувки', 'beach-towel': 'Плажна кърпа', necktie: 'Вратовръзка',
+    'power-bank': 'Външна батерия', shorts: 'Къси панталони',
+    'dress-shirt': 'Риза / блуза', blazer: 'Сако',
+    'hand-sanitizer': 'Дезинфектант за ръце', 'period-care': 'Дамски продукти',
+    'insect-repellent': 'Репелент против насекоми',
   },
   pack: {
     label: 'Прогрес на стягането',
@@ -997,6 +1018,13 @@ function App() {
 
   const packPct = packableCount ? (packedCount / packableCount) * 100 : 0
 
+  // Position a point (fill edge or tick label) so it lands under the slider
+  // thumb's centre: the thumb centre travels from thumb/2 to (width − thumb/2),
+  // so a plain percentage of the full track would drift off by up to half a thumb.
+  const rangePos = (v: number) =>
+    `calc(${(v - 1) / 20} * (100% - var(--pm-thumb)) + var(--pm-thumb) / 2)`
+  const daysFillStop = rangePos(days)
+
   const togglePacked = (id: string) =>
     setPacked((prev) => ({ ...prev, [id]: !prev[id] }))
 
@@ -1122,11 +1150,15 @@ function App() {
               onChange={(e) => setDays(Number(e.target.value))}
               className="pm-range"
               style={{
-                background: `linear-gradient(to right, var(--pm-accent) 0%, var(--pm-accent-2) ${((days - 1) / 20) * 100}%, var(--pm-track) ${((days - 1) / 20) * 100}%, var(--pm-track) 100%)`,
+                background: `linear-gradient(to right, var(--pm-accent) 0%, var(--pm-accent-2) ${daysFillStop}, var(--pm-track) ${daysFillStop}, var(--pm-track) 100%)`,
               }}
             />
-            <div className="pm-range-scale">
-              <span>1</span><span>7</span><span>14</span><span>21</span>
+            <div className="pm-range-scale" aria-hidden>
+              {[1, 7, 14, 21].map((mark) => (
+                <span key={mark} className="pm-range-mark" style={{ left: rangePos(mark) }}>
+                  {mark}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -1655,6 +1687,7 @@ const packmateCss = `
   --pm-border: #e2e8f0;
   --pm-border-strong: #cbd5e1;
   --pm-track: #e2e8f0;
+  --pm-thumb: 24px;
   --pm-danger: #dc2626;
   --pm-danger-bg: #fee2e2;
   --pm-warn: #d97706;
@@ -1888,7 +1921,8 @@ const packmateCss = `
 }
 .pm-range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
-  width: 22px; height: 22px; border-radius: 50%;
+  box-sizing: border-box;
+  width: var(--pm-thumb); height: var(--pm-thumb); border-radius: 50%;
   background: var(--pm-card); border: 3px solid var(--pm-accent);
   box-shadow: 0 4px 10px rgba(99,102,241,.45), 0 0 0 6px rgba(99,102,241,.0);
   cursor: grab; transition: transform .15s ease, box-shadow .15s ease;
@@ -1896,14 +1930,20 @@ const packmateCss = `
 .pm-range::-webkit-slider-thumb:hover { box-shadow: 0 4px 12px rgba(99,102,241,.55), 0 0 0 6px rgba(99,102,241,.15); }
 .pm-range::-webkit-slider-thumb:active { transform: scale(1.18); cursor: grabbing; }
 .pm-range::-moz-range-thumb {
-  width: 22px; height: 22px; border-radius: 50%;
+  box-sizing: border-box;
+  width: var(--pm-thumb); height: var(--pm-thumb); border-radius: 50%;
   background: var(--pm-card); border: 3px solid var(--pm-accent);
   box-shadow: 0 4px 10px rgba(99,102,241,.45); cursor: grab;
 }
 .pm-range-scale {
-  display: flex; justify-content: space-between;
+  position: relative; height: 15px;
   margin-top: 10px; color: var(--pm-muted); font-size: 12px;
   font-variant-numeric: tabular-nums; font-weight: 600;
+}
+.pm-range-mark {
+  position: absolute; top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
 }
 
 /* segmented (gender) */
