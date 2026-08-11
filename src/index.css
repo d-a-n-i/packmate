@@ -28,4 +28,13 @@ body {
    #root is just a full-bleed wrapper that fills the viewport height. */
 #root {
   min-height: 100svh;
+
+  /* The hero mesh bleeds 40px past the app on each side. On a phone the app
+     is already full-width, so that bleed made the document wider than the
+     viewport — Android Chrome then widens the layout viewport and lets the
+     page pan sideways, which hijacks vertical drags. Clip the bleed at the
+     viewport edge instead.
+     `clip`, not `hidden`: it doesn't create a scroll container, so the
+     sticky summary column keeps working. */
+  overflow-x: clip;
 }

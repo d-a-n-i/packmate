@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type TouchEvent as ReactTouchEvent,
+} from 'react'
 
 /* ============================================================ TYPES ============================================================ */
 
@@ -1166,6 +1174,34 @@ function App() {
     `calc(${(v - 1) / 20} * (100% - var(--pm-thumb)) + var(--pm-thumb) / 2)`
   const daysFillStop = rangePos(days)
 
+  // The trip-length slider is full-width on phones, so a finger put down to
+  // scroll the page usually lands on it — and a touch on a range input seeks
+  // the thumb to that spot before the browser knows the gesture is a scroll.
+  // `touch-action: pan-y` lets the page scroll; this puts the day count back
+  // once the gesture proves to be vertical. Pointer-down runs before the seek,
+  // so it is where the pre-gesture value is safe to capture.
+  const rangeGesture = useRef<{ x: number; y: number; days: number; scrolling: boolean } | null>(null)
+
+  const onRangePointerDown = (e: ReactPointerEvent<HTMLInputElement>) => {
+    if (e.pointerType !== 'touch') return
+    rangeGesture.current = { x: e.clientX, y: e.clientY, days, scrolling: false }
+  }
+
+  const onRangeTouchMove = (e: ReactTouchEvent<HTMLInputElement>) => {
+    const g = rangeGesture.current
+    if (!g || g.scrolling || e.touches.length !== 1) return
+    const dx = Math.abs(e.touches[0].clientX - g.x)
+    const dy = Math.abs(e.touches[0].clientY - g.y)
+    if (dy > 8 && dy > dx) {
+      g.scrolling = true
+      setDays(g.days)
+    }
+  }
+
+  const onRangeTouchEnd = () => {
+    rangeGesture.current = null
+  }
+
   const togglePacked = (id: string) =>
     setPacked((prev) => ({ ...prev, [id]: !prev[id] }))
 
@@ -1288,7 +1324,15 @@ function App() {
               max={21}
               step={1}
               value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
+              onChange={(e) => {
+                // Mid-scroll seeks are discarded; React restores the DOM value.
+                if (rangeGesture.current?.scrolling) return
+                setDays(Number(e.target.value))
+              }}
+              onPointerDown={onRangePointerDown}
+              onTouchMove={onRangeTouchMove}
+              onTouchEnd={onRangeTouchEnd}
+              onTouchCancel={onRangeTouchEnd}
               className="pm-range"
               style={{
                 background: `linear-gradient(to right, var(--pm-accent) 0%, var(--pm-accent-2) ${daysFillStop}, var(--pm-track) ${daysFillStop}, var(--pm-track) 100%)`,
@@ -2070,6 +2114,11 @@ const packmateCss = `
   width: 100%; height: 8px; border-radius: 999px;
   outline: none; cursor: pointer;
   direction: ltr; /* keep the 1→21 scale + fill LTR even on RTL pages */
+  /* The slider spans the full width on phones. Without this, a touch that
+     starts on it is claimed by the thumb drag and the page won't scroll —
+     pan-y hands vertical drags back to the browser while horizontal ones
+     still move the thumb. */
+  touch-action: pan-y;
 }
 .pm-range::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
