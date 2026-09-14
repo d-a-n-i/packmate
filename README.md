@@ -29,8 +29,9 @@ and flags when you've over- or under-packed.
 - **Saved & shareable trips** — snapshot a setup to revisit later, or copy a
   share link that reproduces the exact trip on any device.
 - **Print / save as PDF** — a clean, ink-friendly checklist to carry with you.
-- **Three languages** — English, Русский, Български, auto-detected from the
-  browser (with a manual switcher).
+- **Four languages** — English, עברית (full RTL), Русский, Български —
+  auto-detected from the browser language, locale country and timezone (with a
+  manual switcher, remembered across visits).
 - **Installable PWA** with automatic light/dark theming.
 
 Everything runs client-side; trip state and snapshots live in `localStorage`.
