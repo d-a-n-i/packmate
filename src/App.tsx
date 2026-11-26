@@ -38,7 +38,15 @@ import {
 
 /* ============================================================ TYPES ============================================================ */
 
-type Lang = 'en' | 'ru' | 'bg' | 'he'
+import { isLang, type Lang } from './lang'
+import {
+  PACKED_KEY,
+  STATE_KEY,
+  bootFromSearch,
+  clearRestorePoint,
+  encodeTrip,
+  type RestorePoint,
+} from './share'
 
 interface Snapshot {
   id: string
@@ -156,7 +164,7 @@ interface Translations {
     clear: string
     checkAria: (name: string) => string
   }
-  share: { button: string; copied: string }
+  share: { button: string; copied: string; openedTitle: string; openedBody: string; restore: string; keep: string }
   print: string
   footer: string
   language: string
@@ -316,7 +324,11 @@ const T_EN: Translations = {
     clear: 'Uncheck all',
     checkAria: (name) => `Mark ${name} as packed`,
   },
-  share: { button: 'Share trip', copied: 'Link copied!' },
+  share: {
+    button: 'Share trip', copied: 'Link copied!',
+    openedTitle: 'You opened a shared trip.', openedBody: 'Your own trip was set aside, nothing is lost.',
+    restore: 'Restore my trip', keep: 'Keep this one',
+  },
   print: 'Print / PDF',
   footer: 'PackMate · pack light, travel far.',
   language: 'Language',
@@ -452,7 +464,11 @@ const T_RU: Translations = {
     clear: 'Снять отметки',
     checkAria: (name) => `Отметить «${name}» как собранное`,
   },
-  share: { button: 'Поделиться', copied: 'Ссылка скопирована!' },
+  share: {
+    button: 'Поделиться', copied: 'Ссылка скопирована!',
+    openedTitle: 'Вы открыли поездку по ссылке.', openedBody: 'Ваша поездка отложена и не потеряна.',
+    restore: 'Вернуть мою поездку', keep: 'Оставить эту',
+  },
   print: 'Печать / PDF',
   footer: 'PackMate · меньше вещей — больше дорог.',
   language: 'Язык',
@@ -588,7 +604,11 @@ const T_BG: Translations = {
     clear: 'Изчисти отметките',
     checkAria: (name) => `Отбележи „${name}“ като събрано`,
   },
-  share: { button: 'Сподели', copied: 'Връзката е копирана!' },
+  share: {
+    button: 'Сподели', copied: 'Връзката е копирана!',
+    openedTitle: 'Отвори споделено пътуване.', openedBody: 'Твоето пътуване е запазено настрана, нищо не е изгубено.',
+    restore: 'Върни моето пътуване', keep: 'Остави това',
+  },
   print: 'Печат / PDF',
   footer: 'PackMate · стягай леко, пътувай далече.',
   language: 'Език',
@@ -724,7 +744,11 @@ const T_HE: Translations = {
     clear: 'ניקוי הסימונים',
     checkAria: (name) => `סימון ${name} כארוז`,
   },
-  share: { button: 'שיתוף הטיול', copied: 'הקישור הועתק!' },
+  share: {
+    button: 'שיתוף הטיול', copied: 'הקישור הועתק!',
+    openedTitle: 'פתחת טיול ששותף איתך.', openedBody: 'הטיול שלך נשמר בצד, שום דבר לא אבד.',
+    restore: 'שחזור הטיול שלי', keep: 'להישאר עם זה',
+  },
   print: 'הדפסה / PDF',
   footer: 'PackMate · לארוז קל, להגיע רחוק.',
   language: 'שפה',
@@ -793,7 +817,6 @@ function guessLanguage(): Lang {
 
 /* ============================================================ PERSISTENCE ============================================================ */
 
-const STATE_KEY = 'packmate.state.v2'
 const SNAPSHOTS_KEY = 'packmate.snapshots.v2'
 const LANG_KEY = 'packmate.lang'
 
@@ -850,8 +873,6 @@ function now(): number {
 
 /* -------------------- packing progress (check-off) -------------------- */
 
-const PACKED_KEY = 'packmate.packed.v1'
-
 function loadPacked(): Record<string, boolean> {
   if (typeof window === 'undefined') return {}
   try {
@@ -872,53 +893,27 @@ function savePackedToStorage(packed: Record<string, boolean>) {
 
 /* -------------------- shareable trip links -------------------- */
 
-// Compact, URL-safe base64 encoding of a trip so it can travel in a query
-// string and reproduce the exact setup on any device. Keys kept short.
-function encodeTrip(state: TripState, lang: Lang): string {
-  const payload = {
-    v: 2, l: lang,
-    d: state.days, g: state.gender,
-    r: state.travelerType, t: state.travelType,
-    o: state.overrides,
-    k: state.limitKg,
-    w: state.worn,
-    n: state.laundryDays,
-  }
-  const bytes = new TextEncoder().encode(JSON.stringify(payload))
-  let bin = ''
-  bytes.forEach((b) => { bin += String.fromCharCode(b) })
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function decodeTrip(param: string): { state: TripState; lang?: Lang } | null {
+/** The language explicitly chosen with the switch (detection and links never write it). */
+function readSavedLang(): Lang | null {
   try {
-    const b64 = param.replace(/-/g, '+').replace(/_/g, '/')
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-    const p = JSON.parse(new TextDecoder().decode(bytes))
-    const lang: Lang | undefined =
-      p?.l === 'en' || p?.l === 'ru' || p?.l === 'bg' || p?.l === 'he' ? p.l : undefined
-    return {
-      state: normalizeTrip({
-        days: p?.d, gender: p?.g, travelerType: p?.r, travelType: p?.t,
-        overrides: p?.o, limitKg: p?.k, worn: p?.w, laundryDays: p?.n,
-      }),
-      lang,
-    }
+    const v = localStorage.getItem(LANG_KEY)
+    return isLang(v) ? v : null
   } catch {
     return null
   }
 }
 
-// Read a shared trip from the URL (?t=...) once at startup, then strip the
-// param so ordinary editing + local persistence resume afterwards.
-function readUrlBoot(): { state: TripState; lang?: Lang } | null {
-  if (typeof window === 'undefined') return null
+// Read a shared trip (?t=...) once at startup. Before it replaces the working
+// trip, the visitor's own trip, checks and saved language are kept as a
+// restore point (see share.ts). Then the param is stripped so ordinary
+// editing + local persistence resume.
+function readUrlBoot(): ReturnType<typeof bootFromSearch> {
+  const none = { shared: null, restore: null, resetPacked: false }
+  if (typeof window === 'undefined') return none
   try {
-    const params = new URLSearchParams(window.location.search)
-    const raw = params.get('t')
-    if (!raw) return null
-    const decoded = decodeTrip(raw)
-    if (decoded) {
+    const boot = bootFromSearch(localStorage, window.location.search, readSavedLang(), Date.now())
+    if (boot.shared) {
+      const params = new URLSearchParams(window.location.search)
       params.delete('t')
       const qs = params.toString()
       window.history.replaceState(
@@ -926,9 +921,9 @@ function readUrlBoot(): { state: TripState; lang?: Lang } | null {
         window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
       )
     }
-    return decoded
+    return boot
   } catch {
-    return null
+    return none
   }
 }
 
@@ -955,12 +950,14 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 const URL_BOOT = readUrlBoot()
-const BOOT_STATE: TripState = URL_BOOT?.state ?? loadState()
+const BOOT_STATE: TripState = URL_BOOT.shared?.state ?? loadState()
+const BOOT_PACKED: Record<string, boolean> = URL_BOOT.resetPacked ? {} : loadPacked()
 
 /* ============================================================ COMPONENT ============================================================ */
 
 function App() {
-  const [lang, setLang] = useState<Lang>(() => URL_BOOT?.lang ?? guessLanguage())
+  // A saved choice always beats the sender's language.
+  const [lang, setLang] = useState<Lang>(() => readSavedLang() ?? URL_BOOT.shared?.lang ?? guessLanguage())
   const [days, setDays] = useState<number>(() => BOOT_STATE.days)
   const [gender, setGender] = useState<Gender>(() => BOOT_STATE.gender)
   const [travelerType, setTravelerType] = useState<TravelerType>(() => BOOT_STATE.travelerType)
@@ -971,7 +968,8 @@ function App() {
   const [laundryDays, setLaundryDays] = useState<LaundryDays>(() => BOOT_STATE.laundryDays)
   const [snapshots, setSnapshots] = useState<Snapshot[]>(() => loadSnapshots())
   const [snapshotName, setSnapshotName] = useState('')
-  const [packed, setPacked] = useState<Record<string, boolean>>(() => loadPacked())
+  const [packed, setPacked] = useState<Record<string, boolean>>(() => BOOT_PACKED)
+  const [restorePoint, setRestorePoint] = useState<RestorePoint | null>(() => URL_BOOT.restore)
   const [shareStatus, setShareStatus] = useState<'idle' | 'copied'>('idle')
 
   const t = TRANSLATIONS[lang]
@@ -991,8 +989,13 @@ function App() {
     savePackedToStorage(packed)
   }, [packed])
 
+  // Only an explicit pick from the language switch is remembered.
+  const chooseLang = (l: Lang) => {
+    setLang(l)
+    try { localStorage.setItem(LANG_KEY, l) } catch { /* ignore */ }
+  }
+
   useEffect(() => {
-    try { localStorage.setItem(LANG_KEY, lang) } catch { /* ignore */ }
     document.documentElement.lang = lang
     document.documentElement.dir = dirOf(lang)
   }, [lang])
@@ -1149,15 +1152,35 @@ function App() {
     return `${tt} · ${tr} · ${days}${DAY_SUFFIX[lang]}`
   }
 
+  function applyTrip(s: TripState) {
+    setDays(s.days)
+    setGender(s.gender)
+    setTravelerType(s.travelerType)
+    setTravelType(s.travelType)
+    setOverrides(s.overrides)
+    setLimitKg(s.limitKg)
+    setWorn(s.worn)
+    setLaundryDays(s.laundryDays)
+  }
+
   function loadSnapshot(snap: Snapshot) {
-    setDays(snap.state.days)
-    setGender(snap.state.gender)
-    setTravelerType(snap.state.travelerType)
-    setTravelType(snap.state.travelType)
-    setOverrides(snap.state.overrides)
-    setLimitKg(snap.state.limitKg)
-    setWorn(snap.state.worn)
-    setLaundryDays(snap.state.laundryDays)
+    applyTrip(snap.state)
+  }
+
+  /* -------------------- shared-link restore -------------------- */
+
+  function restoreOwnTrip() {
+    if (!restorePoint) return
+    applyTrip(restorePoint.state)
+    setPacked(restorePoint.packed)
+    if (restorePoint.lang) setLang(restorePoint.lang)
+    clearRestorePoint(localStorage)
+    setRestorePoint(null)
+  }
+
+  function keepSharedTrip() {
+    clearRestorePoint(localStorage)
+    setRestorePoint(null)
   }
 
   function deleteSnapshot(id: string) {
@@ -1196,7 +1219,7 @@ function App() {
           </div>
 
           <div className="pm-hero-right">
-            <LanguagePicker lang={lang} onChange={setLang} label={t.language} />
+            <LanguagePicker lang={lang} onChange={chooseLang} label={t.language} />
             <div className="pm-kpis">
               <Kpi label={t.kpi.items}  value={String(totalItems)} accent />
               <Kpi
@@ -1208,6 +1231,23 @@ function App() {
             </div>
           </div>
         </header>
+
+        {restorePoint && (
+          <section className="pm-restore" aria-live="polite">
+            <span className="pm-alert-icon" aria-hidden>🔗</span>
+            <span className="pm-restore-text">
+              <b>{t.share.openedTitle}</b> {t.share.openedBody}
+            </span>
+            <span className="pm-restore-actions">
+              <button type="button" className="pm-btn pm-btn-sm pm-btn-primary" onClick={restoreOwnTrip}>
+                ↩ {t.share.restore}
+              </button>
+              <button type="button" className="pm-btn pm-btn-sm" onClick={keepSharedTrip}>
+                {t.share.keep}
+              </button>
+            </span>
+          </section>
+        )}
 
         {warnings.length > 0 && (
           <section className="pm-warnings" aria-live="polite">
@@ -2552,6 +2592,18 @@ const packmateCss = `
   color: var(--pm-danger);
   border-color: color-mix(in srgb, var(--pm-danger) 55%, transparent);
 }
+
+/* ========== shared-link restore ========== */
+.pm-restore {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border: 1px solid color-mix(in srgb, var(--pm-accent) 45%, transparent);
+  background: var(--pm-accent-bg);
+  border-radius: 14px; padding: 12px 16px; margin-bottom: 16px;
+  font-size: 14px;
+}
+.pm-restore-text { flex: 1; min-width: 200px; }
+.pm-restore-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+@media print { .pm-restore { display: none !important; } }
 
 /* ========== worn on the travel day ========== */
 .pm-kpi-note { font-size: 11px; color: var(--pm-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
