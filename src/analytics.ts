@@ -32,13 +32,22 @@ export interface TrackWindow {
 const browserWindow = (): TrackWindow | undefined =>
   typeof window !== 'undefined' ? (window as unknown as TrackWindow) : undefined
 
+/**
+ * Event paths carry the site host, like the page views do, because the stats
+ * server also counts other sites: 'packmate.d85c.com/event/share'.
+ */
+export function eventPath(name: EventName): string {
+  const host = typeof location !== 'undefined' && location.host ? location.host : 'packmate.d85c.com'
+  return `${host}/event/${name}`
+}
+
 /** Count one event. Never throws. */
 export function track(name: EventName, win: TrackWindow | undefined = browserWindow()): void {
   if (!win) return
   const send = (): boolean => {
     const gc = win.goatcounter
     if (!gc || typeof gc.count !== 'function') return false
-    gc.count({ path: `event/${name}`, event: true })
+    gc.count({ path: eventPath(name), event: true })
     return true
   }
   try {

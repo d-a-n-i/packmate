@@ -14,7 +14,7 @@ describe('track', () => {
   it('sends an event-style GoatCounter count', () => {
     const count = vi.fn()
     track('share', { goatcounter: { count } })
-    expect(count).toHaveBeenCalledWith({ path: 'event/share', event: true })
+    expect(count).toHaveBeenCalledWith({ path: 'packmate.d85c.com/event/share', event: true })
   })
 
   it('never throws when the script is absent, broken or blocked', () => {
@@ -34,7 +34,7 @@ describe('track', () => {
     const count = vi.fn()
     win.goatcounter = { count }
     onLoad!()
-    expect(count).toHaveBeenCalledWith({ path: 'event/shared_open', event: true })
+    expect(count).toHaveBeenCalledWith({ path: 'packmate.d85c.com/event/shared_open', event: true })
   })
 
   it('trackOncePerPage only counts the first call', () => {
@@ -87,7 +87,7 @@ describe('return_visit', () => {
     noteVisit(storage, new Date(2026, 10, 26, 22), win)
     expect(count).not.toHaveBeenCalled()
     noteVisit(storage, new Date(2026, 10, 28, 8), win)
-    expect(count).toHaveBeenCalledWith({ path: 'event/return_visit', event: true })
+    expect(count).toHaveBeenCalledWith({ path: 'packmate.d85c.com/event/return_visit', event: true })
     expect(JSON.parse(map.get(VISITS_KEY)!)).toEqual({ first: '2026-11-26', done: true })
     expect(() => noteVisit(undefined, new Date(), win)).not.toThrow()
   })
