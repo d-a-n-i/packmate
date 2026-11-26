@@ -8,59 +8,41 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from 'react'
 
+import {
+  CATEGORY_ORDER,
+  DEFAULT_TRIP,
+  bagQty,
+  chooseLuggage,
+  computeTotals,
+  isCabinLimit,
+  listQty,
+  normalizeTrip,
+  resolveItems,
+  suggestedQty,
+  wornQty,
+  BACKPACK_MAX_L,
+  BAG_LIMITS,
+  CABIN_MAX_KG,
+  CARRY_ON_MAX_L,
+  type BagLimit,
+  type LuggageKey,
+  type Category,
+  type Gender,
+  type ResolvedItem,
+  type TravelType,
+  type TravelerType,
+  type TripState,
+} from './packing'
+
 /* ============================================================ TYPES ============================================================ */
 
 type Lang = 'en' | 'ru' | 'bg' | 'he'
-type Gender = 'male' | 'female'
-type TravelerType = 'lean' | 'it' | 'prepared'
-type TravelType = 'city' | 'summer' | 'ski' | 'hiking' | 'business'
-
-type Category =
-  | 'documents'
-  | 'electronics'
-  | 'clothing'
-  | 'outerwear'
-  | 'footwear'
-  | 'toiletries'
-  | 'health'
-  | 'extras'
-  | 'specialty'
-
-interface PackItem {
-  id: string
-  emoji: string
-  category: Category
-  /** Per-day multiplier for scaling items. 0 for fixed items. */
-  basePerDay: number
-  weightKg: number
-  volumeL: number
-  /** Fixed items always default to a quantity of 1. */
-  fixed: boolean
-  gender?: Gender
-  /** Baseline essential flag (additional essentials come from traveler / travel type). */
-  essential?: boolean
-  /** Show only on these travel types. */
-  onlyTravelTypes?: TravelType[]
-}
-
-interface ResolvedItem extends PackItem {
-  /** Final essential flag after traveler / travel type rules applied. */
-  essential: boolean
-}
-
-interface AppState {
-  days: number
-  gender: Gender
-  travelerType: TravelerType
-  travelType: TravelType
-  overrides: Record<string, number>
-}
 
 interface Snapshot {
   id: string
   name: string
   savedAt: number
-  state: AppState
+  state: TripState
 }
 
 interface Warning {
@@ -68,25 +50,7 @@ interface Warning {
   msg: string
 }
 
-interface Luggage {
-  nameKey: 'backpack' | 'carryOn' | 'suitcase'
-  emoji: string
-  tier: 1 | 2 | 3
-}
-
 /* ============================================================ ITEMS ============================================================ */
-
-const CATEGORY_ORDER: Category[] = [
-  'documents',
-  'electronics',
-  'clothing',
-  'outerwear',
-  'footwear',
-  'toiletries',
-  'health',
-  'extras',
-  'specialty',
-]
 
 const CATEGORY_EMOJI: Record<Category, string> = {
   documents: '📑',
@@ -100,134 +64,15 @@ const CATEGORY_EMOJI: Record<Category, string> = {
   specialty: '⛰️',
 }
 
-const ITEMS: PackItem[] = [
-  // Documents & Money
-  { id: 'passport',     emoji: '📔', category: 'documents', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true, essential: true },
-  { id: 'wallet',       emoji: '👛', category: 'documents', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true, essential: true },
-  { id: 'id-card',      emoji: '🪪', category: 'documents', basePerDay: 0, weightKg: 0.01, volumeL: 0.02, fixed: true, essential: true },
-  { id: 'cash-cards',   emoji: '💳', category: 'documents', basePerDay: 0, weightKg: 0.03, volumeL: 0.05, fixed: true, essential: true },
-  { id: 'insurance',    emoji: '📄', category: 'documents', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true },
 
-  // Electronics
-  { id: 'phone',          emoji: '📱', category: 'electronics', basePerDay: 0, weightKg: 0.20, volumeL: 0.15, fixed: true, essential: true },
-  { id: 'charger',        emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.12, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'power-adapter',  emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true },
-  { id: 'power-bank',     emoji: '🔋', category: 'electronics', basePerDay: 0, weightKg: 0.35, volumeL: 0.40, fixed: true },
-  { id: 'headphones',     emoji: '🎧', category: 'electronics', basePerDay: 0, weightKg: 0.25, volumeL: 0.60, fixed: true },
-  { id: 'laptop',         emoji: '💻', category: 'electronics', basePerDay: 0, weightKg: 1.50, volumeL: 2.00, fixed: true },
-  { id: 'laptop-charger', emoji: '⚡', category: 'electronics', basePerDay: 0, weightKg: 0.40, volumeL: 0.50, fixed: true },
-  { id: 'camera',         emoji: '📷', category: 'electronics', basePerDay: 0, weightKg: 0.60, volumeL: 1.00, fixed: true },
-
-  // Clothing (mostly scaling)
-  { id: 'tshirts',   emoji: '👕', category: 'clothing', basePerDay: 1,    weightKg: 0.18, volumeL: 0.60, fixed: false, essential: true },
-  { id: 'underwear', emoji: '🩲', category: 'clothing', basePerDay: 1,    weightKg: 0.05, volumeL: 0.15, fixed: false, essential: true },
-  { id: 'socks',     emoji: '🧦', category: 'clothing', basePerDay: 1,    weightKg: 0.06, volumeL: 0.20, fixed: false, essential: true },
-  { id: 'pants',     emoji: '👖', category: 'clothing', basePerDay: 0.34, weightKg: 0.55, volumeL: 1.20, fixed: false },
-  { id: 'shorts',      emoji: '🩳', category: 'clothing', basePerDay: 0.30, weightKg: 0.25, volumeL: 0.60, fixed: false },
-  { id: 'dress-shirt', emoji: '👔', category: 'clothing', basePerDay: 0.50, weightKg: 0.25, volumeL: 0.80, fixed: false, onlyTravelTypes: ['city', 'business'] },
-  { id: 'pajamas',   emoji: '🛌', category: 'clothing', basePerDay: 0,    weightKg: 0.30, volumeL: 0.70, fixed: true },
-  { id: 'swimwear',  emoji: '🩳', category: 'clothing', basePerDay: 0,    weightKg: 0.15, volumeL: 0.30, fixed: true },
-
-  // Outerwear
-  { id: 'sweater',     emoji: '🧶', category: 'outerwear', basePerDay: 0, weightKg: 0.50, volumeL: 1.80, fixed: true },
-  { id: 'jacket',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.90, volumeL: 3.50, fixed: true },
-  { id: 'rain-jacket', emoji: '☔', category: 'outerwear', basePerDay: 0, weightKg: 0.30, volumeL: 0.80, fixed: true },
-  { id: 'blazer',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.70, volumeL: 3.00, fixed: true, onlyTravelTypes: ['business'] },
-
-  // Footwear
-  { id: 'sneakers',    emoji: '👟', category: 'footwear', basePerDay: 0, weightKg: 0.80, volumeL: 2.50, fixed: true, essential: true },
-  { id: 'sandals',     emoji: '🩴', category: 'footwear', basePerDay: 0, weightKg: 0.30, volumeL: 1.00, fixed: true },
-  { id: 'dress-shoes', emoji: '👞', category: 'footwear', basePerDay: 0, weightKg: 0.70, volumeL: 2.00, fixed: true },
-
-  // Toiletries
-  { id: 'toothbrush', emoji: '🪥', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true, essential: true },
-  { id: 'toothpaste', emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
-  { id: 'soap',       emoji: '🧼', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
-  { id: 'shampoo',    emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.20, volumeL: 0.25, fixed: true },
-  { id: 'deodorant',  emoji: '🌬️', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
-  { id: 'sunscreen',  emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
-  { id: 'chapstick',  emoji: '💋', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.04, fixed: true },
-  { id: 'hand-sanitizer', emoji: '🫧', category: 'toiletries', basePerDay: 0, weightKg: 0.08, volumeL: 0.10, fixed: true },
-  { id: 'period-care',    emoji: '🌸', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true, gender: 'female' },
-  { id: 'shaving',    emoji: '🪒', category: 'toiletries', basePerDay: 0, weightKg: 0.35, volumeL: 0.80, fixed: true, gender: 'male' },
-  { id: 'makeup',     emoji: '💄', category: 'toiletries', basePerDay: 0, weightKg: 0.55, volumeL: 1.20, fixed: true, gender: 'female' },
-
-  // Health & Comfort
-  { id: 'medications',   emoji: '💊', category: 'health', basePerDay: 0, weightKg: 0.15, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'first-aid',     emoji: '⛑️', category: 'health', basePerDay: 0, weightKg: 0.25, volumeL: 0.50, fixed: true },
-  { id: 'insect-repellent', emoji: '🦟', category: 'health', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true, essential: true, onlyTravelTypes: ['summer', 'hiking'] },
-  { id: 'travel-pillow', emoji: '💺', category: 'health', basePerDay: 0, weightKg: 0.30, volumeL: 2.00, fixed: true },
-  { id: 'sleep-mask',    emoji: '😴', category: 'health', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true },
-
-  // Travel Extras
-  { id: 'water-bottle', emoji: '💧', category: 'extras', basePerDay: 0, weightKg: 0.15, volumeL: 0.70, fixed: true },
-  { id: 'book',         emoji: '📖', category: 'extras', basePerDay: 0, weightKg: 0.30, volumeL: 0.50, fixed: true },
-  { id: 'sunglasses',   emoji: '🕶️', category: 'extras', basePerDay: 0, weightKg: 0.05, volumeL: 0.20, fixed: true },
-  { id: 'day-backpack', emoji: '🎒', category: 'extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
-  { id: 'umbrella',     emoji: '☂️', category: 'extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
-
-  // Specialty Gear (gated by travel type)
-  { id: 'ski-gloves',    emoji: '🧤', category: 'specialty', basePerDay: 0, weightKg: 0.20, volumeL: 0.60, fixed: true, onlyTravelTypes: ['ski'] },
-  { id: 'ski-goggles',   emoji: '🥽', category: 'specialty', basePerDay: 0, weightKg: 0.15, volumeL: 0.40, fixed: true, onlyTravelTypes: ['ski'] },
-  { id: 'beanie',        emoji: '🎿', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['ski'] },
-  { id: 'hiking-boots',  emoji: '🥾', category: 'specialty', basePerDay: 0, weightKg: 1.10, volumeL: 3.00, fixed: true, onlyTravelTypes: ['hiking'] },
-  { id: 'beach-towel',   emoji: '🏖️', category: 'specialty', basePerDay: 0, weightKg: 0.40, volumeL: 1.40, fixed: true, onlyTravelTypes: ['summer'] },
-  { id: 'necktie',       emoji: '👔', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['business'] },
-]
-
-/* ============================================================ PROFILE RULES ============================================================ */
-
-const TRAVEL_HIDE: Record<TravelType, string[]> = {
-  city:     [],
-  summer:   ['jacket', 'sweater', 'rain-jacket'],
-  ski:      ['swimwear', 'sandals', 'dress-shoes', 'shorts'],
-  hiking:   ['dress-shoes', 'swimwear', 'sandals'],
-  business: ['swimwear', 'sandals', 'shorts'],
-}
-
-const TRAVEL_ESSENTIALS: Record<TravelType, string[]> = {
-  city:     [],
-  summer:   ['sunscreen', 'sunglasses', 'sandals', 'swimwear', 'beach-towel', 'shorts'],
-  ski:      ['jacket', 'sweater', 'ski-gloves', 'ski-goggles', 'beanie'],
-  hiking:   ['water-bottle', 'day-backpack', 'hiking-boots', 'sunscreen'],
-  business: ['dress-shoes', 'dress-shirt', 'blazer', 'pants', 'laptop'],
-}
-
-const TRAVELER_HIDE: Record<TravelerType, string[]> = {
-  lean:     ['laptop', 'laptop-charger', 'camera', 'travel-pillow', 'day-backpack', 'umbrella', 'dress-shoes', 'sweater', 'pajamas', 'sleep-mask', 'first-aid', 'book'],
-  it:       [],
-  prepared: [],
-}
-
-const TRAVELER_ESSENTIALS: Record<TravelerType, string[]> = {
-  lean:     [],
-  it:       ['laptop', 'laptop-charger', 'headphones', 'power-adapter', 'power-bank'],
-  prepared: ['first-aid', 'medications', 'day-backpack', 'umbrella', 'sleep-mask', 'insurance', 'water-bottle', 'power-bank', 'hand-sanitizer'],
-}
-
-function resolveItems(
-  gender: Gender,
-  traveler: TravelerType,
-  travelType: TravelType,
-): ResolvedItem[] {
-  const hideSet = new Set([...TRAVEL_HIDE[travelType], ...TRAVELER_HIDE[traveler]])
-  const essentialSet = new Set([...TRAVEL_ESSENTIALS[travelType], ...TRAVELER_ESSENTIALS[traveler]])
-  return ITEMS.flatMap((it) => {
-    if (it.gender && it.gender !== gender) return []
-    if (it.onlyTravelTypes && !it.onlyTravelTypes.includes(travelType)) return []
-    // A trip/traveler essential is never hidden by the *other* axis' hide list
-    // (e.g. Lean hides the sweater, but a Ski trip still needs it).
-    if (hideSet.has(it.id) && !essentialSet.has(it.id)) return []
-    return [{ ...it, essential: !!it.essential || essentialSet.has(it.id) } as ResolvedItem]
-  })
-}
+const LUGGAGE_EMOJI: Record<LuggageKey, string> = { backpack: '🎒', carryOn: '🧳', suitcase: '🧰' }
 
 /* ============================================================ I18N ============================================================ */
 
 interface Translations {
   tagline: string
   subtitle: string
-  kpi: { items: string; weight: string; volume: string }
+  kpi: { items: string; weight: string; volume: string; worn: (kg: string) => string }
   units: { kg: string; l: string }
   controls: {
     tripLength: string
@@ -241,6 +86,10 @@ interface Translations {
     female: string
     travelType: string
     travelTypeHint: string
+    bagLimit: string
+    bagLimitHint: string
+    cabin: string
+    hold: string
   }
   list: {
     title: string
@@ -251,6 +100,10 @@ interface Translations {
     perDay: string
     essential: string
     genderTag: { male: string; female: string }
+    wear: string
+    worn: string
+    wearAria: (name: string) => string
+    wornNote: string
   }
   telemetry: { title: string; volume: string; weight: string }
   luggage: {
@@ -265,6 +118,9 @@ interface Translations {
     barCarryOn: string
     barSuitcase: string
     tier: (n: number) => string
+    blockedWeight: (capKg: number) => string
+    blockedVolume: (capL: number) => string
+    blockedBoth: (capKg: number, capL: number) => string
   }
   snapshots: {
     title: string
@@ -277,7 +133,7 @@ interface Translations {
     confirmDelete: string
   }
   warnings: {
-    overweight: (kg: string) => string
+    overLimit: (kg: string, limit: number, over: string) => string
     overvolume: (l: string) => string
     overpacked: (emoji: string, name: string, qty: number, sugg: number) => string
     fixedOver: (emoji: string, name: string, qty: number) => string
@@ -328,7 +184,7 @@ const TRAVEL_TYPE_EMOJI: Record<TravelType, string> = {
 const T_EN: Translations = {
   tagline: 'Smart packing for any trip',
   subtitle: 'Powered by math, not vibes. Set your trip, the list balances itself.',
-  kpi: { items: 'Items', weight: 'Weight', volume: 'Volume' },
+  kpi: { items: 'Items', weight: 'Weight', volume: 'Volume', worn: (kg) => `+${kg} kg worn` },
   units: { kg: 'kg', l: 'L' },
   controls: {
     tripLength: 'Trip length',
@@ -342,6 +198,10 @@ const T_EN: Translations = {
     female: 'Female',
     travelType: 'Trip type',
     travelTypeHint: 'shapes the gear list',
+    bagLimit: 'Bag limit',
+    bagLimitHint: 'your airline allowance',
+    cabin: 'Cabin',
+    hold: 'Checked',
   },
   list: {
     title: 'Packing list',
@@ -352,6 +212,10 @@ const T_EN: Translations = {
     perDay: '/ day',
     essential: 'essential',
     genderTag: { male: 'male', female: 'female' },
+    wear: 'Wear it',
+    worn: 'Wearing',
+    wearAria: (name) => `Wear ${name} on the travel day instead of packing it`,
+    wornNote: 'worn on the way, not in the bag',
   },
   telemetry: { title: 'Live telemetry', volume: 'Volume', weight: 'Weight' },
   luggage: {
@@ -366,6 +230,9 @@ const T_EN: Translations = {
     barCarryOn: 'Carry-on',
     barSuitcase: 'Suitcase',
     tier: (n) => `tier ${n}/3`,
+    blockedWeight: (kg) => `Too heavy for a cabin bag (over ${kg} kg)`,
+    blockedVolume: (l) => `Too bulky for a cabin bag (over ${l} L)`,
+    blockedBoth: (kg, l) => `Too heavy (over ${kg} kg) and too bulky (over ${l} L) for a cabin bag`,
   },
   snapshots: {
     title: 'Saved trips',
@@ -378,7 +245,7 @@ const T_EN: Translations = {
     confirmDelete: 'Delete this saved trip?',
   },
   warnings: {
-    overweight: (kg) => `Total weight is ${kg} kg — that's over the standard 20 kg airline allowance.`,
+    overLimit: (kg, limit, over) => `The bag weighs ${kg} kg - over your ${limit} kg limit. Take out ${over} kg or pick a bigger allowance.`,
     overvolume: (l) => `Total volume is ${l} L — past carry-on size, consider trimming the list.`,
     overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} is more than double the suggested ${sugg}.`,
     fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} feels excessive for a single-item essential.`,
@@ -450,7 +317,7 @@ const T_EN: Translations = {
 const T_RU: Translations = {
   tagline: 'Умная упаковка для любой поездки',
   subtitle: 'Расчёт, а не интуиция. Задаёте параметры — список считается сам.',
-  kpi: { items: 'Предметы', weight: 'Вес', volume: 'Объём' },
+  kpi: { items: 'Предметы', weight: 'Вес', volume: 'Объём', worn: (kg) => `+${kg} кг на себе` },
   units: { kg: 'кг', l: 'л' },
   controls: {
     tripLength: 'Длительность',
@@ -464,6 +331,10 @@ const T_RU: Translations = {
     female: 'Женский',
     travelType: 'Тип поездки',
     travelTypeHint: 'формирует список снаряжения',
+    bagLimit: 'Лимит багажа',
+    bagLimitHint: 'норма авиакомпании',
+    cabin: 'Ручная кладь',
+    hold: 'Багаж',
   },
   list: {
     title: 'Список вещей',
@@ -474,6 +345,10 @@ const T_RU: Translations = {
     perDay: '/ день',
     essential: 'обязательно',
     genderTag: { male: 'муж.', female: 'жен.' },
+    wear: 'Надеть',
+    worn: 'На мне',
+    wearAria: (name) => `Надеть «${name}» в дорогу, а не класть в сумку`,
+    wornNote: 'надето в дорогу, не в сумке',
   },
   telemetry: { title: 'Текущие показатели', volume: 'Объём', weight: 'Вес' },
   luggage: {
@@ -488,6 +363,9 @@ const T_RU: Translations = {
     barCarryOn: 'Ручная',
     barSuitcase: 'Чемодан',
     tier: (n) => `${n}/3`,
+    blockedWeight: (kg) => `Слишком тяжело для ручной клади (больше ${kg} кг)`,
+    blockedVolume: (l) => `Слишком объёмно для ручной клади (больше ${l} л)`,
+    blockedBoth: (kg, l) => `Слишком тяжело (больше ${kg} кг) и объёмно (больше ${l} л) для ручной клади`,
   },
   snapshots: {
     title: 'Сохранённые поездки',
@@ -500,7 +378,7 @@ const T_RU: Translations = {
     confirmDelete: 'Удалить эту поездку?',
   },
   warnings: {
-    overweight: (kg) => `Общий вес ${kg} кг — это больше стандартного лимита 20 кг.`,
+    overLimit: (kg, limit, over) => `Сумка весит ${kg} кг - больше вашего лимита ${limit} кг. Уберите ${over} кг или выберите норму побольше.`,
     overvolume: (l) => `Общий объём ${l} л — это больше ручной клади, лучше что-то убрать.`,
     overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — это более чем вдвое от ${sugg} рекомендованных.`,
     fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — слишком много для одного предмета.`,
@@ -572,7 +450,7 @@ const T_RU: Translations = {
 const T_BG: Translations = {
   tagline: 'Умно стягане за всяко пътуване',
   subtitle: 'Сметката е наука, не интуиция. Задаваш дните — списъкът се сглобява сам.',
-  kpi: { items: 'Предмети', weight: 'Тегло', volume: 'Обем' },
+  kpi: { items: 'Предмети', weight: 'Тегло', volume: 'Обем', worn: (kg) => `+${kg} кг облечени` },
   units: { kg: 'кг', l: 'л' },
   controls: {
     tripLength: 'Дължина на пътуването',
@@ -586,6 +464,10 @@ const T_BG: Translations = {
     female: 'Женски',
     travelType: 'Вид пътуване',
     travelTypeHint: 'оформя списъка с екипировка',
+    bagLimit: 'Лимит на багажа',
+    bagLimitHint: 'нормата на авиокомпанията',
+    cabin: 'Ръчен',
+    hold: 'Чекиран',
   },
   list: {
     title: 'Списък за стягане',
@@ -596,6 +478,10 @@ const T_BG: Translations = {
     perDay: '/ ден',
     essential: 'задължително',
     genderTag: { male: 'мъжки', female: 'женски' },
+    wear: 'Облечи',
+    worn: 'Облечено',
+    wearAria: (name) => `Облечи „${name}“ за пътя, вместо да го слагаш в багажа`,
+    wornNote: 'облечено за пътя, не е в багажа',
   },
   telemetry: { title: 'Текуща телеметрия', volume: 'Обем', weight: 'Тегло' },
   luggage: {
@@ -610,6 +496,9 @@ const T_BG: Translations = {
     barCarryOn: 'Ръчен',
     barSuitcase: 'Куфар',
     tier: (n) => `ниво ${n}/3`,
+    blockedWeight: (kg) => `Твърде тежко за ръчен багаж (над ${kg} кг)`,
+    blockedVolume: (l) => `Твърде обемно за ръчен багаж (над ${l} л)`,
+    blockedBoth: (kg, l) => `Твърде тежко (над ${kg} кг) и обемно (над ${l} л) за ръчен багаж`,
   },
   snapshots: {
     title: 'Запазени пътувания',
@@ -622,7 +511,7 @@ const T_BG: Translations = {
     confirmDelete: 'Да изтрия ли това пътуване?',
   },
   warnings: {
-    overweight: (kg) => `Общото тегло е ${kg} кг — над стандартния лимит от 20 кг.`,
+    overLimit: (kg, limit, over) => `Багажът тежи ${kg} кг - над лимита ти от ${limit} кг. Извади ${over} кг или избери по-голяма норма.`,
     overvolume: (l) => `Общият обем е ${l} л — над размера на ръчен багаж, орежи нещо.`,
     overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} е повече от двойно над препоръчаните ${sugg}.`,
     fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} е твърде много за един предмет.`,
@@ -694,7 +583,7 @@ const T_BG: Translations = {
 const T_HE: Translations = {
   tagline: 'אריזה חכמה לכל טיול',
   subtitle: 'מבוסס על חישוב, לא על תחושה. מגדירים את הטיול והרשימה מסתדרת לבד.',
-  kpi: { items: 'פריטים', weight: 'משקל', volume: 'נפח' },
+  kpi: { items: 'פריטים', weight: 'משקל', volume: 'נפח', worn: (kg) => `+${kg} ק"ג לבוש` },
   units: { kg: 'ק"ג', l: 'ל׳' },
   controls: {
     tripLength: 'משך הטיול',
@@ -708,6 +597,10 @@ const T_HE: Translations = {
     female: 'אישה',
     travelType: 'סוג הטיול',
     travelTypeHint: 'מעצב את רשימת הציוד',
+    bagLimit: 'מגבלת משקל',
+    bagLimitHint: 'לפי חברת התעופה',
+    cabin: 'כבודת יד',
+    hold: 'כבודה רשומה',
   },
   list: {
     title: 'רשימת אריזה',
@@ -718,6 +611,10 @@ const T_HE: Translations = {
     perDay: '/ יום',
     essential: 'חיוני',
     genderTag: { male: 'גבר', female: 'אישה' },
+    wear: 'ללבוש',
+    worn: 'לבוש',
+    wearAria: (name) => `ללבוש ${name} בדרך במקום לארוז`,
+    wornNote: 'לבוש בדרך, לא בתיק',
   },
   telemetry: { title: 'נתונים בזמן אמת', volume: 'נפח', weight: 'משקל' },
   luggage: {
@@ -732,6 +629,9 @@ const T_HE: Translations = {
     barCarryOn: 'טרולי',
     barSuitcase: 'מזוודה',
     tier: (n) => `רמה ${n}/3`,
+    blockedWeight: (kg) => `כבד מדי לכבודת יד (מעל ${kg} ק"ג)`,
+    blockedVolume: (l) => `גדול מדי לכבודת יד (מעל ${l} ליטר)`,
+    blockedBoth: (kg, l) => `כבד מדי (מעל ${kg} ק"ג) וגדול מדי (מעל ${l} ליטר) לכבודת יד`,
   },
   snapshots: {
     title: 'טיולים שמורים',
@@ -744,7 +644,7 @@ const T_HE: Translations = {
     confirmDelete: 'למחוק את הטיול השמור?',
   },
   warnings: {
-    overweight: (kg) => `המשקל הכולל הוא ${kg} ק"ג — מעל מכסת 20 ק"ג הרגילה של חברות התעופה.`,
+    overLimit: (kg, limit, over) => `התיק שוקל ${kg} ק"ג - מעל המגבלה שלך של ${limit} ק"ג. כדאי להוציא ${over} ק"ג או לבחור מכסה גדולה יותר.`,
     overvolume: (l) => `הנפח הכולל הוא ${l} ליטר — מעבר לגודל של מזוודת יד, כדאי לצמצם.`,
     overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — יותר מפי שניים מ-${sugg} המומלצים.`,
     fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — הרבה מדי לפריט יחיד.`,
@@ -880,33 +780,18 @@ const STATE_KEY = 'packmate.state.v2'
 const SNAPSHOTS_KEY = 'packmate.snapshots.v2'
 const LANG_KEY = 'packmate.lang'
 
-const DEFAULT_STATE: AppState = {
-  days: 7,
-  gender: 'male',
-  travelerType: 'prepared',
-  travelType: 'city',
-  overrides: {},
-}
-
-function loadState(): AppState {
-  if (typeof window === 'undefined') return DEFAULT_STATE
+function loadState(): TripState {
+  if (typeof window === 'undefined') return DEFAULT_TRIP
   try {
     const raw = localStorage.getItem(STATE_KEY)
-    if (!raw) return DEFAULT_STATE
-    const parsed = JSON.parse(raw)
-    return {
-      days: clamp(parsed?.days ?? 7, 1, 21),
-      gender: parsed?.gender === 'female' ? 'female' : 'male',
-      travelerType: ['lean', 'it', 'prepared'].includes(parsed?.travelerType) ? parsed.travelerType : 'prepared',
-      travelType: ['city', 'summer', 'ski', 'hiking', 'business'].includes(parsed?.travelType) ? parsed.travelType : 'city',
-      overrides: (parsed?.overrides && typeof parsed.overrides === 'object') ? parsed.overrides : {},
-    }
+    if (!raw) return DEFAULT_TRIP
+    return normalizeTrip(JSON.parse(raw))
   } catch {
-    return DEFAULT_STATE
+    return DEFAULT_TRIP
   }
 }
 
-function saveStateToStorage(state: AppState) {
+function saveStateToStorage(state: TripState) {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(state))
   } catch { /* quota or disabled */ }
@@ -918,7 +803,11 @@ function loadSnapshots(): Snapshot[] {
     const raw = localStorage.getItem(SNAPSHOTS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    // Older snapshots predate the bag limit / worn fields: normalize them.
+    return parsed
+      .filter((x) => x && typeof x === 'object' && typeof x.id === 'string')
+      .map((x) => ({ id: x.id, name: String(x.name ?? ''), savedAt: Number(x.savedAt) || 0, state: normalizeTrip(x.state) }))
   } catch {
     return []
   }
@@ -928,10 +817,6 @@ function saveSnapshotsToStorage(snaps: Snapshot[]) {
   try {
     localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snaps))
   } catch { /* ignore */ }
-}
-
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v))
 }
 
 function uid(): string {
@@ -972,12 +857,14 @@ function savePackedToStorage(packed: Record<string, boolean>) {
 
 // Compact, URL-safe base64 encoding of a trip so it can travel in a query
 // string and reproduce the exact setup on any device. Keys kept short.
-function encodeTrip(state: AppState, lang: Lang): string {
+function encodeTrip(state: TripState, lang: Lang): string {
   const payload = {
     v: 2, l: lang,
     d: state.days, g: state.gender,
     r: state.travelerType, t: state.travelType,
     o: state.overrides,
+    k: state.limitKg,
+    w: state.worn,
   }
   const bytes = new TextEncoder().encode(JSON.stringify(payload))
   let bin = ''
@@ -985,7 +872,7 @@ function encodeTrip(state: AppState, lang: Lang): string {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
-function decodeTrip(param: string): { state: AppState; lang?: Lang } | null {
+function decodeTrip(param: string): { state: TripState; lang?: Lang } | null {
   try {
     const b64 = param.replace(/-/g, '+').replace(/_/g, '/')
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
@@ -993,13 +880,10 @@ function decodeTrip(param: string): { state: AppState; lang?: Lang } | null {
     const lang: Lang | undefined =
       p?.l === 'en' || p?.l === 'ru' || p?.l === 'bg' || p?.l === 'he' ? p.l : undefined
     return {
-      state: {
-        days: clamp(Number(p?.d) || 7, 1, 21),
-        gender: p?.g === 'female' ? 'female' : 'male',
-        travelerType: ['lean', 'it', 'prepared'].includes(p?.r) ? p.r : 'prepared',
-        travelType: ['city', 'summer', 'ski', 'hiking', 'business'].includes(p?.t) ? p.t : 'city',
-        overrides: p?.o && typeof p.o === 'object' ? p.o : {},
-      },
+      state: normalizeTrip({
+        days: p?.d, gender: p?.g, travelerType: p?.r, travelType: p?.t,
+        overrides: p?.o, limitKg: p?.k, worn: p?.w,
+      }),
       lang,
     }
   } catch {
@@ -1009,7 +893,7 @@ function decodeTrip(param: string): { state: AppState; lang?: Lang } | null {
 
 // Read a shared trip from the URL (?t=...) once at startup, then strip the
 // param so ordinary editing + local persistence resume afterwards.
-function readUrlBoot(): { state: AppState; lang?: Lang } | null {
+function readUrlBoot(): { state: TripState; lang?: Lang } | null {
   if (typeof window === 'undefined') return null
   try {
     const params = new URLSearchParams(window.location.search)
@@ -1053,7 +937,7 @@ async function copyText(text: string): Promise<boolean> {
 }
 
 const URL_BOOT = readUrlBoot()
-const BOOT_STATE: AppState = URL_BOOT?.state ?? loadState()
+const BOOT_STATE: TripState = URL_BOOT?.state ?? loadState()
 
 /* ============================================================ COMPONENT ============================================================ */
 
@@ -1064,6 +948,8 @@ function App() {
   const [travelerType, setTravelerType] = useState<TravelerType>(() => BOOT_STATE.travelerType)
   const [travelType, setTravelType] = useState<TravelType>(() => BOOT_STATE.travelType)
   const [overrides, setOverrides] = useState<Record<string, number>>(() => BOOT_STATE.overrides)
+  const [limitKg, setLimitKg] = useState<BagLimit>(() => BOOT_STATE.limitKg)
+  const [worn, setWorn] = useState<string[]>(() => BOOT_STATE.worn)
   const [snapshots, setSnapshots] = useState<Snapshot[]>(() => loadSnapshots())
   const [snapshotName, setSnapshotName] = useState('')
   const [packed, setPacked] = useState<Record<string, boolean>>(() => loadPacked())
@@ -1071,10 +957,15 @@ function App() {
 
   const t = TRANSLATIONS[lang]
 
+  const trip: TripState = useMemo(
+    () => ({ days, gender, travelerType, travelType, overrides, limitKg, worn }),
+    [days, gender, travelerType, travelType, overrides, limitKg, worn],
+  )
+
   // Persist UI state continuously.
   useEffect(() => {
-    saveStateToStorage({ days, gender, travelerType, travelType, overrides })
-  }, [days, gender, travelerType, travelType, overrides])
+    saveStateToStorage(trip)
+  }, [trip])
 
   // Persist packing progress (kept separate from trip config + snapshots).
   useEffect(() => {
@@ -1092,11 +983,8 @@ function App() {
     [gender, travelerType, travelType],
   )
 
-  const defaultQty = (item: ResolvedItem) =>
-    item.fixed ? 1 : Math.max(1, Math.ceil(item.basePerDay * days))
-
-  const getQty = (item: ResolvedItem) =>
-    overrides[item.id] ?? defaultQty(item)
+  const defaultQty = (item: ResolvedItem) => suggestedQty(item, trip)
+  const getQty = (item: ResolvedItem) => listQty(item, trip)
 
   const setQty = (item: ResolvedItem, qty: number) =>
     setOverrides((prev) => ({ ...prev, [item.id]: Math.max(0, qty) }))
@@ -1108,27 +996,26 @@ function App() {
       return next
     })
 
-  const { totalWeight, totalVolume, totalItems } = useMemo(() => {
-    let w = 0, v = 0, n = 0
-    for (const it of activeItems) {
-      const q = getQty(it)
-      w += q * it.weightKg
-      v += q * it.volumeL
-      n += q
-    }
-    return { totalWeight: w, totalVolume: v, totalItems: n }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days])
+  const toggleWorn = (id: string) =>
+    setWorn((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].sort()))
 
-  const luggage: Luggage = useMemo(() => {
-    if (totalVolume <= 25) return { nameKey: 'backpack', emoji: '🎒', tier: 1 }
-    if (totalVolume <= 45) return { nameKey: 'carryOn',  emoji: '🧳', tier: 2 }
-    return                     { nameKey: 'suitcase', emoji: '🧰', tier: 3 }
-  }, [totalVolume])
+  // Totals are for the bag: anything worn on the travel day is left out.
+  const totals = useMemo(() => computeTotals(activeItems, trip), [activeItems, trip])
+  const { weightKg: totalWeight, volumeL: totalVolume, count: totalItems } = totals
+
+  // The verdict must pass BOTH weight (against the chosen limit) and volume.
+  const verdict = useMemo(
+    () => chooseLuggage(totalWeight, totalVolume, limitKg),
+    [totalWeight, totalVolume, limitKg],
+  )
+  const luggageEmoji = LUGGAGE_EMOJI[verdict.nameKey]
+  const cabinLimit = isCabinLimit(limitKg)
+  const cabinCapKg = Math.min(limitKg, CABIN_MAX_KG)
 
   const warnings: Warning[] = useMemo(() => {
     const w: Warning[] = []
-    if (totalWeight > 20) w.push({ type: 'over', msg: t.warnings.overweight(totalWeight.toFixed(1)) })
+    if (verdict.overLimit)
+      w.push({ type: 'over', msg: t.warnings.overLimit(totalWeight.toFixed(1), limitKg, verdict.overByKg.toFixed(1)) })
     if (totalVolume > 60) w.push({ type: 'over', msg: t.warnings.overvolume(totalVolume.toFixed(1)) })
     for (const it of activeItems) {
       const def = defaultQty(it)
@@ -1142,28 +1029,30 @@ function App() {
     }
     return w
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days, totalWeight, totalVolume, lang])
+  }, [activeItems, trip, totalWeight, totalVolume, verdict, lang])
 
   const volumePct = Math.min(100, (totalVolume / 70) * 100)
-  const weightPct = Math.min(100, (totalWeight / 25) * 100)
+  // Scale the weight gauge so the chosen limit sits at 80% of the track.
+  const weightScale = limitKg * 1.25
+  const weightPct = Math.min(100, (totalWeight / weightScale) * 100)
 
   const usedCategoriesCount = useMemo(
     () => CATEGORY_ORDER.filter((c) => activeItems.some((i) => i.category === c)).length,
     [activeItems],
   )
 
-  // Packing progress counts only items you are actually bringing (qty > 0).
+  // Packing progress counts only units that actually go in the bag: an item
+  // you wear (and have no spare of) is not "packable" and never counts as packed.
   const { packedCount, packableCount } = useMemo(() => {
     let packableCount = 0
     let packedCount = 0
     for (const it of activeItems) {
-      if (getQty(it) <= 0) continue
+      if (bagQty(it, trip) <= 0) continue
       packableCount++
       if (packed[it.id]) packedCount++
     }
     return { packedCount, packableCount }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days, packed])
+  }, [activeItems, trip, packed])
 
   const packPct = packableCount ? (packedCount / packableCount) * 100 : 0
 
@@ -1210,7 +1099,7 @@ function App() {
   async function shareTrip() {
     const url =
       `${window.location.origin}${window.location.pathname}` +
-      `?t=${encodeTrip({ days, gender, travelerType, travelType, overrides }, lang)}`
+      `?t=${encodeTrip(trip, lang)}`
     if (await copyText(url)) {
       setShareStatus('copied')
       window.setTimeout(() => setShareStatus('idle'), 2000)
@@ -1227,7 +1116,7 @@ function App() {
       id: uid(),
       name,
       savedAt: now(),
-      state: { days, gender, travelerType, travelType, overrides },
+      state: trip,
     }
     const next = [snap, ...snapshots].slice(0, 20)
     setSnapshots(next)
@@ -1247,6 +1136,8 @@ function App() {
     setTravelerType(snap.state.travelerType)
     setTravelType(snap.state.travelType)
     setOverrides(snap.state.overrides)
+    setLimitKg(snap.state.limitKg)
+    setWorn(snap.state.worn)
   }
 
   function deleteSnapshot(id: string) {
@@ -1288,7 +1179,11 @@ function App() {
             <LanguagePicker lang={lang} onChange={setLang} label={t.language} />
             <div className="pm-kpis">
               <Kpi label={t.kpi.items}  value={String(totalItems)} accent />
-              <Kpi label={t.kpi.weight} value={`${totalWeight.toFixed(2)} ${t.units.kg}`} />
+              <Kpi
+                label={t.kpi.weight}
+                value={`${totalWeight.toFixed(2)} ${t.units.kg}`}
+                note={totals.wornCount > 0 ? t.kpi.worn(totals.wornWeightKg.toFixed(2)) : undefined}
+              />
               <Kpi label={t.kpi.volume} value={`${totalVolume.toFixed(2)} ${t.units.l}`} />
             </div>
           </div>
@@ -1421,6 +1316,30 @@ function App() {
               })}
             </div>
           </div>
+
+          <div className="pm-control pm-control-span-2">
+            <div className="pm-control-head">
+              <span className="pm-label" id="pm-limit-label">{t.controls.bagLimit}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.bagLimitHint}</span>
+            </div>
+            <div className="pm-chips" role="group" aria-labelledby="pm-limit-label">
+              {BAG_LIMITS.map((kg) => {
+                const active = limitKg === kg
+                return (
+                  <button
+                    key={kg}
+                    type="button"
+                    onClick={() => setLimitKg(kg)}
+                    className={`pm-chip ${active ? 'pm-chip-active' : ''}`}
+                    aria-pressed={active}
+                  >
+                    <span aria-hidden>{isCabinLimit(kg) ? '🧳' : '🧰'}</span>
+                    {' '}{isCabinLimit(kg) ? t.controls.cabin : t.controls.hold} {kg} {t.units.kg}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </section>
 
         <section className="pm-grid">
@@ -1484,8 +1403,8 @@ function App() {
             {CATEGORY_ORDER.map((cat) => {
               const itemsInCat = activeItems.filter((it) => it.category === cat)
               if (itemsInCat.length === 0) return null
-              const catQty = itemsInCat.reduce((sum, it) => sum + getQty(it), 0)
-              const catWeight = itemsInCat.reduce((sum, it) => sum + getQty(it) * it.weightKg, 0)
+              const catQty = itemsInCat.reduce((sum, it) => sum + bagQty(it, trip), 0)
+              const catWeight = itemsInCat.reduce((sum, it) => sum + bagQty(it, trip) * it.weightKg, 0)
               return (
                 <div key={cat} className="pm-cat">
                   <div className="pm-cat-head">
@@ -1506,7 +1425,12 @@ function App() {
                       const lowOnScaling =
                         !it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2)
                       const itemName = t.items[it.id] ?? it.id
-                      const isPacked = !!packed[it.id]
+                      const wornN = wornQty(it, trip)
+                      const inBag = qty - wornN
+                      const isWorn = wornN > 0
+                      // Nothing left to pack once the only unit is worn.
+                      const allWorn = isWorn && inBag === 0
+                      const isPacked = !!packed[it.id] && !allWorn
                       const isZero = qty === 0
                       return (
                         <li
@@ -1514,6 +1438,7 @@ function App() {
                           className={[
                             'pm-item',
                             isZero ? 'pm-item-zero' : '',
+                            allWorn ? 'pm-item-worn' : '',
                             !isZero && isPacked ? 'pm-item-packed' : '',
                             !isZero && (overPacked || fixedOverpacked) ? 'pm-item-warn' : '',
                             !isZero && lowOnScaling ? 'pm-item-low' : '',
@@ -1527,6 +1452,10 @@ function App() {
                               aria-hidden
                             >
                               ✕
+                            </span>
+                          ) : allWorn ? (
+                            <span className="pm-check-worn" aria-hidden title={t.list.worn}>
+                              ✓
                             </span>
                           ) : (
                             <input
@@ -1563,13 +1492,31 @@ function App() {
                                 </>
                               )}
                               <span className="pm-dot">•</span>
-                              {(qty * it.weightKg).toFixed(2)} {t.units.kg}
+                              {(inBag * it.weightKg).toFixed(2)} {t.units.kg}
                               <span className="pm-dot">•</span>
-                              {(qty * it.volumeL).toFixed(2)} {t.units.l}
+                              {(inBag * it.volumeL).toFixed(2)} {t.units.l}
+                              {isWorn && (
+                                <>
+                                  <span className="pm-dot">•</span>
+                                  <span className="pm-worn-note">{wornN} {t.list.wornNote}</span>
+                                </>
+                              )}
                             </div>
                           </div>
 
                           <div className="pm-qty">
+                            {it.wearable && qty > 0 && (
+                              <button
+                                type="button"
+                                className={`pm-btn pm-btn-sm pm-wear ${isWorn ? 'pm-wear-on' : ''}`}
+                                onClick={() => toggleWorn(it.id)}
+                                aria-pressed={isWorn}
+                                aria-label={t.list.wearAria(itemName)}
+                                title={t.list.wearAria(itemName)}
+                              >
+                                {isWorn ? `✓ ${t.list.worn}` : t.list.wear}
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="pm-btn pm-btn-round"
@@ -1619,39 +1566,51 @@ function App() {
                 pct={volumePct}
                 color="var(--pm-accent)"
                 ticks={[
-                  { at: (25 / 70) * 100, label: '25L' },
-                  { at: (45 / 70) * 100, label: '45L' },
+                  { at: (BACKPACK_MAX_L / 70) * 100, label: `${BACKPACK_MAX_L}L` },
+                  { at: (CARRY_ON_MAX_L / 70) * 100, label: `${CARRY_ON_MAX_L}L` },
                 ]}
               />
               <Gauge
                 label={t.telemetry.weight}
                 value={`${totalWeight.toFixed(2)} ${t.units.kg}`}
                 pct={weightPct}
-                color={totalWeight > 20 ? 'var(--pm-danger)' : 'var(--pm-success)'}
-                ticks={[{ at: (20 / 25) * 100, label: '20kg' }]}
+                color={verdict.overLimit ? 'var(--pm-danger)' : 'var(--pm-success)'}
+                ticks={[
+                  ...(!cabinLimit ? [{ at: (CABIN_MAX_KG / weightScale) * 100, label: `${CABIN_MAX_KG}kg` }] : []),
+                  { at: (limitKg / weightScale) * 100, label: `${limitKg}kg` },
+                ]}
               />
             </div>
 
-            <div className={`pm-card pm-luggage pm-luggage-${luggage.tier}`}>
+            <div className={`pm-card pm-luggage pm-luggage-${verdict.tier}`}>
               <div className="pm-luggage-head">
                 <span className="pm-muted pm-uppercase">{t.luggage.title}</span>
-                <span className="pm-pill pm-pill-muted">{t.luggage.tier(luggage.tier)}</span>
+                <span className="pm-pill pm-pill-muted">{t.luggage.tier(verdict.tier)}</span>
               </div>
               <div className="pm-luggage-body">
-                <div className="pm-luggage-emoji" aria-hidden>{luggage.emoji}</div>
+                <div className="pm-luggage-emoji" aria-hidden>{luggageEmoji}</div>
                 <div>
-                  <div className="pm-luggage-name">{t.luggage[luggage.nameKey]}</div>
+                  <div className="pm-luggage-name">{t.luggage[verdict.nameKey]}</div>
                   <div className="pm-muted">
-                    {luggage.tier === 1 && t.luggage.capacityUpTo(25)}
-                    {luggage.tier === 2 && t.luggage.capacityBetween(25, 45)}
-                    {luggage.tier === 3 && t.luggage.capacityOver(45)}
+                    {verdict.tier === 1 && t.luggage.capacityUpTo(BACKPACK_MAX_L)}
+                    {verdict.tier === 2 && t.luggage.capacityBetween(BACKPACK_MAX_L, CARRY_ON_MAX_L)}
+                    {verdict.tier === 3 && t.luggage.capacityOver(CARRY_ON_MAX_L)}
+                    {' · '}
+                    {cabinLimit ? t.controls.cabin : t.controls.hold} {limitKg} {t.units.kg}
                   </div>
+                  {verdict.cabinBlockedBy && (
+                    <div className={`pm-luggage-why ${verdict.overLimit ? 'pm-luggage-why-bad' : ''}`}>
+                      {verdict.cabinBlockedBy === 'weight' && t.luggage.blockedWeight(cabinCapKg)}
+                      {verdict.cabinBlockedBy === 'volume' && t.luggage.blockedVolume(CARRY_ON_MAX_L)}
+                      {verdict.cabinBlockedBy === 'both' && t.luggage.blockedBoth(cabinCapKg, CARRY_ON_MAX_L)}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="pm-luggage-bar" aria-hidden>
-                <div className={`pm-luggage-seg ${luggage.tier >= 1 ? 'on' : ''}`}>{t.luggage.barBackpack}</div>
-                <div className={`pm-luggage-seg ${luggage.tier >= 2 ? 'on' : ''}`}>{t.luggage.barCarryOn}</div>
-                <div className={`pm-luggage-seg ${luggage.tier >= 3 ? 'on' : ''}`}>{t.luggage.barSuitcase}</div>
+                <div className={`pm-luggage-seg ${verdict.tier >= 1 ? 'on' : ''}`}>{t.luggage.barBackpack}</div>
+                <div className={`pm-luggage-seg ${verdict.tier >= 2 ? 'on' : ''}`}>{t.luggage.barCarryOn}</div>
+                <div className={`pm-luggage-seg ${verdict.tier >= 3 ? 'on' : ''}`}>{t.luggage.barSuitcase}</div>
               </div>
             </div>
 
@@ -1764,11 +1723,12 @@ function LogoMark({ size }: { size: number }) {
   )
 }
 
-function Kpi({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function Kpi({ label, value, note, accent = false }: { label: string; value: string; note?: string; accent?: boolean }) {
   return (
     <div className={`pm-kpi ${accent ? 'pm-kpi-accent' : ''}`}>
       <div className="pm-kpi-value">{value}</div>
       <div className="pm-kpi-label">{label}</div>
+      {note && <div className="pm-kpi-note">{note}</div>}
     </div>
   )
 }
@@ -2549,6 +2509,22 @@ const packmateCss = `
   color: var(--pm-danger);
   border-color: color-mix(in srgb, var(--pm-danger) 55%, transparent);
 }
+
+/* ========== worn on the travel day ========== */
+.pm-kpi-note { font-size: 11px; color: var(--pm-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.pm-kpi-accent .pm-kpi-note { color: rgba(255,255,255,.85); }
+.pm-wear { white-space: nowrap; }
+.pm-wear-on { background: var(--pm-accent-bg); color: var(--pm-accent-strong); border-color: var(--pm-accent); }
+.pm-worn-note { color: var(--pm-accent-strong); font-weight: 600; }
+.pm-item-worn { opacity: .7; }
+.pm-check-worn {
+  width: 22px; height: 22px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 13px; font-weight: 800; line-height: 1;
+  color: var(--pm-accent-strong);
+  border: 1px dashed var(--pm-accent); border-radius: 6px;
+}
+.pm-luggage-why { font-size: 12.5px; color: var(--pm-text-soft); margin-top: 4px; }
+.pm-luggage-why-bad { color: var(--pm-danger); font-weight: 600; }
 
 /* ========== print ========== */
 .pm-print-head { display: none; }
