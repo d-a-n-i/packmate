@@ -38,6 +38,7 @@ import {
 
 /* ============================================================ TYPES ============================================================ */
 
+import { noteVisit, track, trackOncePerPage } from './analytics'
 import { isLang, type Lang } from './lang'
 import {
   PACKED_KEY,
@@ -953,6 +954,13 @@ const URL_BOOT = readUrlBoot()
 const BOOT_STATE: TripState = URL_BOOT.shared?.state ?? loadState()
 const BOOT_PACKED: Record<string, boolean> = URL_BOOT.resetPacked ? {} : loadPacked()
 
+// Cookie-free counts (see analytics.ts). Run once per page load, outside React
+// so StrictMode's double effects can't double-count.
+if (typeof window !== 'undefined') {
+  if (URL_BOOT.shared) track('shared_open')
+  try { noteVisit(localStorage, new Date()) } catch { /* storage disabled */ }
+}
+
 /* ============================================================ COMPONENT ============================================================ */
 
 function App() {
@@ -991,6 +999,7 @@ function App() {
 
   // Only an explicit pick from the language switch is remembered.
   const chooseLang = (l: Lang) => {
+    if (l !== lang) track('language_change')
     setLang(l)
     try { localStorage.setItem(LANG_KEY, l) } catch { /* ignore */ }
   }
@@ -1113,8 +1122,15 @@ function App() {
     rangeGesture.current = null
   }
 
-  const togglePacked = (id: string) =>
-    setPacked((prev) => ({ ...prev, [id]: !prev[id] }))
+  const togglePacked = (id: string) => {
+    const next = { ...packed, [id]: !packed[id] }
+    setPacked(next)
+    if (next[id]) {
+      const checked = activeItems.filter((it) => next[it.id] && bagQty(it, trip) > 0).length
+      if (checked >= 1) trackOncePerPage('first_check')
+      if (checked >= 5) trackOncePerPage('five_checks')
+    }
+  }
 
   const clearPacked = () => setPacked({})
 
@@ -1123,12 +1139,16 @@ function App() {
       `${window.location.origin}${window.location.pathname}` +
       `?t=${encodeTrip(trip, lang)}`
     if (await copyText(url)) {
+      track('share')
       setShareStatus('copied')
       window.setTimeout(() => setShareStatus('idle'), 2000)
     }
   }
 
-  const printList = () => window.print()
+  const printList = () => {
+    track('print')
+    window.print()
+  }
 
   /* -------------------- snapshot handlers -------------------- */
 
@@ -1144,6 +1164,7 @@ function App() {
     setSnapshots(next)
     saveSnapshotsToStorage(next)
     setSnapshotName('')
+    track('save')
   }
 
   function autoSnapshotName(): string {
@@ -1165,6 +1186,7 @@ function App() {
 
   function loadSnapshot(snap: Snapshot) {
     applyTrip(snap.state)
+    track('load')
   }
 
   /* -------------------- shared-link restore -------------------- */
