@@ -23,6 +23,8 @@ import {
   BACKPACK_MAX_L,
   BAG_LIMITS,
   CABIN_MAX_KG,
+  LAUNDRY_OPTIONS,
+  type LaundryDays,
   CARRY_ON_MAX_L,
   type BagLimit,
   type LuggageKey,
@@ -86,6 +88,9 @@ interface Translations {
     female: string
     travelType: string
     travelTypeHint: string
+    laundry: string
+    laundryHint: string
+    laundryEvery: (n: number) => string
     bagLimit: string
     bagLimitHint: string
     cabin: string
@@ -198,6 +203,9 @@ const T_EN: Translations = {
     female: 'Female',
     travelType: 'Trip type',
     travelTypeHint: 'shapes the gear list',
+    laundry: 'Laundry',
+    laundryHint: 'clothes for one wash cycle',
+    laundryEvery: (n) => `every ${n} days`,
     bagLimit: 'Bag limit',
     bagLimitHint: 'your airline allowance',
     cabin: 'Cabin',
@@ -331,6 +339,9 @@ const T_RU: Translations = {
     female: 'Женский',
     travelType: 'Тип поездки',
     travelTypeHint: 'формирует список снаряжения',
+    laundry: 'Стирка',
+    laundryHint: 'одежда на один цикл стирки',
+    laundryEvery: (n) => `каждые ${n} дн.`,
     bagLimit: 'Лимит багажа',
     bagLimitHint: 'норма авиакомпании',
     cabin: 'Ручная кладь',
@@ -464,6 +475,9 @@ const T_BG: Translations = {
     female: 'Женски',
     travelType: 'Вид пътуване',
     travelTypeHint: 'оформя списъка с екипировка',
+    laundry: 'Пране',
+    laundryHint: 'дрехи за един цикъл пране',
+    laundryEvery: (n) => `на всеки ${n} дни`,
     bagLimit: 'Лимит на багажа',
     bagLimitHint: 'нормата на авиокомпанията',
     cabin: 'Ръчен',
@@ -597,6 +611,9 @@ const T_HE: Translations = {
     female: 'אישה',
     travelType: 'סוג הטיול',
     travelTypeHint: 'מעצב את רשימת הציוד',
+    laundry: 'כביסה',
+    laundryHint: 'בגדים למחזור כביסה אחד',
+    laundryEvery: (n) => `כל ${n} ימים`,
     bagLimit: 'מגבלת משקל',
     bagLimitHint: 'לפי חברת התעופה',
     cabin: 'כבודת יד',
@@ -865,6 +882,7 @@ function encodeTrip(state: TripState, lang: Lang): string {
     o: state.overrides,
     k: state.limitKg,
     w: state.worn,
+    n: state.laundryDays,
   }
   const bytes = new TextEncoder().encode(JSON.stringify(payload))
   let bin = ''
@@ -882,7 +900,7 @@ function decodeTrip(param: string): { state: TripState; lang?: Lang } | null {
     return {
       state: normalizeTrip({
         days: p?.d, gender: p?.g, travelerType: p?.r, travelType: p?.t,
-        overrides: p?.o, limitKg: p?.k, worn: p?.w,
+        overrides: p?.o, limitKg: p?.k, worn: p?.w, laundryDays: p?.n,
       }),
       lang,
     }
@@ -950,6 +968,7 @@ function App() {
   const [overrides, setOverrides] = useState<Record<string, number>>(() => BOOT_STATE.overrides)
   const [limitKg, setLimitKg] = useState<BagLimit>(() => BOOT_STATE.limitKg)
   const [worn, setWorn] = useState<string[]>(() => BOOT_STATE.worn)
+  const [laundryDays, setLaundryDays] = useState<LaundryDays>(() => BOOT_STATE.laundryDays)
   const [snapshots, setSnapshots] = useState<Snapshot[]>(() => loadSnapshots())
   const [snapshotName, setSnapshotName] = useState('')
   const [packed, setPacked] = useState<Record<string, boolean>>(() => loadPacked())
@@ -958,8 +977,8 @@ function App() {
   const t = TRANSLATIONS[lang]
 
   const trip: TripState = useMemo(
-    () => ({ days, gender, travelerType, travelType, overrides, limitKg, worn }),
-    [days, gender, travelerType, travelType, overrides, limitKg, worn],
+    () => ({ days, gender, travelerType, travelType, overrides, limitKg, worn, laundryDays }),
+    [days, gender, travelerType, travelType, overrides, limitKg, worn, laundryDays],
   )
 
   // Persist UI state continuously.
@@ -1138,6 +1157,7 @@ function App() {
     setOverrides(snap.state.overrides)
     setLimitKg(snap.state.limitKg)
     setWorn(snap.state.worn)
+    setLaundryDays(snap.state.laundryDays)
   }
 
   function deleteSnapshot(id: string) {
@@ -1311,6 +1331,29 @@ function App() {
                     aria-pressed={active}
                   >
                     <span aria-hidden>{info.emoji}</span> {info.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="pm-control pm-control-span-2">
+            <div className="pm-control-head">
+              <span className="pm-label" id="pm-laundry-label">{t.controls.laundry}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.laundryHint}</span>
+            </div>
+            <div className="pm-chips" role="group" aria-labelledby="pm-laundry-label">
+              {LAUNDRY_OPTIONS.map((n) => {
+                const active = laundryDays === n
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setLaundryDays(n)}
+                    className={`pm-chip ${active ? 'pm-chip-active' : ''}`}
+                    aria-pressed={active}
+                  >
+                    <span aria-hidden>🧺</span> {t.controls.laundryEvery(n)}
                   </button>
                 )
               })}

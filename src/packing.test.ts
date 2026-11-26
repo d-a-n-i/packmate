@@ -3,14 +3,17 @@ import {
   BAG_LIMITS,
   CABIN_MAX_KG,
   ITEMS,
+  LAUNDRY_OPTIONS,
   TRAVEL_TYPES,
   TRAVELER_TYPES,
   bagQty,
   chooseLuggage,
+  clothingDays,
   computeTotals,
   evaluateTrip,
   normalizeTrip,
   resolveItems,
+  suggestedQty,
   type Gender,
 } from './packing'
 
@@ -139,5 +142,61 @@ describe('normalizeTrip', () => {
 describe('catalog sanity', () => {
   it('item ids are unique', () => {
     expect(new Set(ITEMS.map((i) => i.id)).size).toBe(ITEMS.length)
+  })
+})
+
+describe('laundry-aware quantities', () => {
+  const tshirtsFor = (trip: Parameters<typeof normalizeTrip>[0]) => {
+    const t = normalizeTrip(trip)
+    const item = resolveItems(t.gender, t.travelerType, t.travelType).find((i) => i.id === 'tshirts')!
+    return suggestedQty(item, t)
+  }
+
+  it('per-day clothing is capped at laundry days + 1', () => {
+    expect(clothingDays({ days: 21, laundryDays: 7 })).toBe(8)
+    expect(clothingDays({ days: 3, laundryDays: 7 })).toBe(3)
+    expect(tshirtsFor({ days: 21, laundryDays: 3 })).toBe(4)
+    expect(tshirtsFor({ days: 21, laundryDays: 14 })).toBe(15)
+  })
+
+  it('default trip never suggests more than 8 t-shirts, at any length', () => {
+    for (let days = 1; days <= 21; days++) expect(tshirtsFor({ days })).toBeLessThanOrEqual(8)
+    expect(tshirtsFor({ days: 21 })).toBe(8)
+  })
+
+  it('no per-day item ever exceeds laundry days + 1, for any profile', () => {
+    for (const travelerType of TRAVELER_TYPES)
+      for (const travelType of TRAVEL_TYPES)
+        for (const laundryDays of LAUNDRY_OPTIONS) {
+          const t = normalizeTrip({ days: 21, travelerType, travelType, laundryDays })
+          for (const it of resolveItems(t.gender, t.travelerType, t.travelType))
+            if (!it.fixed) expect(suggestedQty(it, t)).toBeLessThanOrEqual(laundryDays + 1)
+        }
+  })
+
+  it('a 21-day default trip stays under 20 kg', () => {
+    const { totals } = evaluateTrip(normalizeTrip({ days: 21 }))
+    expect(totals.weightKg).toBeLessThan(20)
+    expect(totals.weightKg).toBeCloseTo(16.72, 2)
+  })
+
+  it('Lean lowers per-day multipliers', () => {
+    expect(tshirtsFor({ days: 7, travelerType: 'lean' })).toBe(5)
+    expect(tshirtsFor({ days: 7, travelerType: 'prepared' })).toBe(7)
+  })
+
+  it('Lean 7-day trip is under 8 kg once the travel-day jacket and shoes are worn', () => {
+    for (const gender of ['male', 'female'] as Gender[]) {
+      const { totals } = evaluateTrip(
+        normalizeTrip({ days: 7, travelerType: 'lean', gender, worn: ['jacket', 'sneakers'] }),
+      )
+      expect(totals.weightKg).toBeLessThan(8)
+      expect(totals.wornWeightKg).toBeCloseTo(1.7, 3)
+    }
+  })
+
+  it('float noise does not add a unit (0.3 x 10 is 3, not 4)', () => {
+    const shorts = ITEMS.find((i) => i.id === 'shorts')!
+    expect(suggestedQty(shorts, normalizeTrip({ days: 10, laundryDays: 14 }))).toBe(3)
   })
 })

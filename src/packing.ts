@@ -63,6 +63,17 @@ export const isCabinLimit = (l: BagLimit) => l <= CABIN_MAX_KG
 export const isBagLimit = (v: unknown): v is BagLimit =>
   typeof v === 'number' && (BAG_LIMITS as readonly number[]).includes(v)
 
+/* ------------------------------------------------------------------ laundry + profile factors */
+
+export const LAUNDRY_OPTIONS = [3, 4, 5, 7, 10, 14] as const
+export type LaundryDays = (typeof LAUNDRY_OPTIONS)[number]
+export const DEFAULT_LAUNDRY: LaundryDays = 7
+export const isLaundryDays = (v: unknown): v is LaundryDays =>
+  typeof v === 'number' && (LAUNDRY_OPTIONS as readonly number[]).includes(v)
+
+/** Lean travelers re-wear more: per-day multipliers are scaled down. */
+export const PER_DAY_FACTOR: Record<TravelerType, number> = { lean: 0.7, it: 1, prepared: 1 }
+
 /* ------------------------------------------------------------------ trip state */
 
 export interface TripState {
@@ -75,6 +86,8 @@ export interface TripState {
   limitKg: BagLimit
   /** Item ids worn on the travel day: one unit of each leaves the bag totals. */
   worn: string[]
+  /** You can do laundry every N days: per-day clothing is capped at N + 1. */
+  laundryDays: LaundryDays
 }
 
 export const DEFAULT_TRIP: TripState = {
@@ -85,6 +98,7 @@ export const DEFAULT_TRIP: TripState = {
   overrides: {},
   limitKg: DEFAULT_LIMIT,
   worn: [],
+  laundryDays: DEFAULT_LAUNDRY,
 }
 
 export const TRAVELER_TYPES: TravelerType[] = ['lean', 'it', 'prepared']
@@ -120,6 +134,7 @@ export function normalizeTrip(raw: unknown): TripState {
     overrides,
     limitKg: isBagLimit(p.limitKg) ? p.limitKg : DEFAULT_LIMIT,
     worn,
+    laundryDays: isLaundryDays(p.laundryDays) ? p.laundryDays : DEFAULT_LAUNDRY,
   }
 }
 
@@ -261,10 +276,20 @@ export function resolveItems(
 
 /* ------------------------------------------------------------------ quantities */
 
+/** Days of clothing to carry: never more than one laundry cycle (N days + 1 spare). */
+export function clothingDays(trip: Pick<TripState, 'days' | 'laundryDays'>): number {
+  return Math.min(trip.days, trip.laundryDays + 1)
+}
+
 /** The suggested quantity before any manual override. */
-export function suggestedQty(item: PackItem, trip: Pick<TripState, 'days'>): number {
+export function suggestedQty(
+  item: PackItem,
+  trip: Pick<TripState, 'days' | 'laundryDays' | 'travelerType'>,
+): number {
   if (item.fixed) return 1
-  return Math.max(1, Math.ceil(item.basePerDay * trip.days))
+  const raw = item.basePerDay * clothingDays(trip) * PER_DAY_FACTOR[trip.travelerType]
+  // The epsilon keeps float noise (0.3 * 10 = 3.0000000000000004) from adding a unit.
+  return Math.max(1, Math.ceil(raw - 1e-9))
 }
 
 /** The quantity on the list (manual override if any, else the suggestion). */
