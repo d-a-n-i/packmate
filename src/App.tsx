@@ -39,7 +39,17 @@ import {
 /* ============================================================ TYPES ============================================================ */
 
 import { noteVisit, track, trackOncePerPage } from './analytics'
-import { isLang, type Lang } from './lang'
+import {
+  LANG_CHOICE_KEY,
+  LANG_PATH,
+  LEGACY_LANG_KEY,
+  browserLanguages,
+  detectLanguage,
+  isLang,
+  langFromPath,
+  type Lang,
+  type LangSource,
+} from './lang'
 import {
   PACKED_KEY,
   STATE_KEY,
@@ -757,69 +767,43 @@ const T_HE: Translations = {
 
 const TRANSLATIONS: Record<Lang, Translations> = { en: T_EN, ru: T_RU, bg: T_BG, he: T_HE }
 
-/* ============================================================ LANG DETECTION ============================================================ */
+/* ============================================================ LANGUAGE ============================================================ */
 
-const RUSSIAN_COUNTRIES = new Set(['ru', 'by', 'kz', 'kg', 'tj', 'tm', 'uz', 'az', 'am', 'ge', 'md', 'ua', 'ee', 'lv', 'lt'])
-const BG_TIMEZONES = new Set(['Europe/Sofia', 'Europe/Skopje'])
-const HE_TIMEZONES = new Set(['Asia/Jerusalem', 'Asia/Tel_Aviv'])
-const RU_TIMEZONES = new Set([
-  // Russia
-  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Europe/Volgograd',
-  'Europe/Astrakhan', 'Europe/Saratov', 'Europe/Ulyanovsk', 'Europe/Kirov',
-  'Asia/Yekaterinburg', 'Asia/Omsk', 'Asia/Novosibirsk', 'Asia/Novokuznetsk',
-  'Asia/Krasnoyarsk', 'Asia/Irkutsk', 'Asia/Chita', 'Asia/Yakutsk',
-  'Asia/Vladivostok', 'Asia/Khandyga', 'Asia/Sakhalin', 'Asia/Ust-Nera',
-  'Asia/Magadan', 'Asia/Srednekolymsk', 'Asia/Kamchatka', 'Asia/Anadyr',
-  'Asia/Tomsk', 'Asia/Barnaul',
-  // Other former-USSR (per user spec)
-  'Europe/Minsk',
-  'Europe/Kyiv', 'Europe/Uzhgorod', 'Europe/Zaporozhye', 'Europe/Simferopol',
-  'Europe/Chisinau',
-  'Europe/Tallinn', 'Europe/Riga', 'Europe/Vilnius',
-  'Asia/Almaty', 'Asia/Aqtobe', 'Asia/Aqtau', 'Asia/Atyrau', 'Asia/Oral', 'Asia/Qostanay', 'Asia/Qyzylorda',
-  'Asia/Bishkek', 'Asia/Dushanbe', 'Asia/Ashgabat',
-  'Asia/Tashkent', 'Asia/Samarkand',
-  'Asia/Baku', 'Asia/Yerevan', 'Asia/Tbilisi',
-])
+// The rules live in lang.ts (saved choice > entry-page path > browser
+// languages in order > English with a note). No country or timezone is used.
 
-function guessLanguage(): Lang {
-  if (typeof window === 'undefined') return 'en'
+/** The language explicitly chosen with the switch (detection and links never write it). */
+function readSavedLang(): Lang | null {
   try {
-    const stored = localStorage.getItem('packmate.lang')
-    if (stored === 'en' || stored === 'ru' || stored === 'bg' || stored === 'he') return stored
-  } catch { /* ignore */ }
-
-  const langs =
-    typeof navigator !== 'undefined' && navigator.languages && navigator.languages.length > 0
-      ? navigator.languages
-      : [typeof navigator !== 'undefined' ? navigator.language || 'en' : 'en']
-
-  for (const lang of langs) {
-    const tag = lang.toLowerCase()
-    // 'he' is the modern code, 'iw' the legacy one some browsers still emit.
-    if (tag.startsWith('he') || tag.startsWith('iw')) return 'he'
-    if (tag.startsWith('bg') || tag.startsWith('mk')) return 'bg'
-    if (tag.startsWith('ru')) return 'ru'
-    const country = tag.split('-')[1]
-    if (country === 'il') return 'he'
-    if (country === 'bg' || country === 'mk') return 'bg'
-    if (country && RUSSIAN_COUNTRIES.has(country)) return 'ru'
+    const v = localStorage.getItem(LANG_CHOICE_KEY)
+    return isLang(v) ? v : null
+  } catch {
+    return null
   }
+}
 
+function bootLanguage(): { lang: Lang; source: LangSource } {
+  if (typeof window === 'undefined') return { lang: 'en', source: 'fallback' }
+  try { localStorage.removeItem(LEGACY_LANG_KEY) } catch { /* ignore */ }
+  return detectLanguage({
+    saved: readSavedLang(),
+    pathLang: langFromPath(window.location.pathname),
+    languages: browserLanguages(typeof navigator !== 'undefined' ? navigator : undefined),
+  })
+}
+
+/** Keep the address bar on the chosen language's entry page (/, /he/, /ru/, /bg/). */
+function syncLangPath(l: Lang) {
   try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    if (HE_TIMEZONES.has(tz)) return 'he'
-    if (BG_TIMEZONES.has(tz)) return 'bg'
-    if (RU_TIMEZONES.has(tz)) return 'ru'
+    const { pathname, search, hash } = window.location
+    const onEntryPage = pathname === '/' || pathname === '/index.html' || langFromPath(pathname) !== null
+    if (onEntryPage && pathname !== LANG_PATH[l]) window.history.replaceState(null, '', LANG_PATH[l] + search + hash)
   } catch { /* ignore */ }
-
-  return 'en'
 }
 
 /* ============================================================ PERSISTENCE ============================================================ */
 
 const SNAPSHOTS_KEY = 'packmate.snapshots.v2'
-const LANG_KEY = 'packmate.lang'
 
 function loadState(): TripState {
   if (typeof window === 'undefined') return DEFAULT_TRIP
@@ -894,16 +878,6 @@ function savePackedToStorage(packed: Record<string, boolean>) {
 
 /* -------------------- shareable trip links -------------------- */
 
-/** The language explicitly chosen with the switch (detection and links never write it). */
-function readSavedLang(): Lang | null {
-  try {
-    const v = localStorage.getItem(LANG_KEY)
-    return isLang(v) ? v : null
-  } catch {
-    return null
-  }
-}
-
 // Read a shared trip (?t=...) once at startup. Before it replaces the working
 // trip, the visitor's own trip, checks and saved language are kept as a
 // restore point (see share.ts). Then the param is stripped so ordinary
@@ -950,6 +924,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+const BOOT_LANG = bootLanguage()
 const URL_BOOT = readUrlBoot()
 const BOOT_STATE: TripState = URL_BOOT.shared?.state ?? loadState()
 const BOOT_PACKED: Record<string, boolean> = URL_BOOT.resetPacked ? {} : loadPacked()
@@ -964,8 +939,8 @@ if (typeof window !== 'undefined') {
 /* ============================================================ COMPONENT ============================================================ */
 
 function App() {
-  // A saved choice always beats the sender's language.
-  const [lang, setLang] = useState<Lang>(() => readSavedLang() ?? URL_BOOT.shared?.lang ?? guessLanguage())
+  const [lang, setLang] = useState<Lang>(() => BOOT_LANG.lang)
+  const [langSource, setLangSource] = useState<LangSource>(() => BOOT_LANG.source)
   const [days, setDays] = useState<number>(() => BOOT_STATE.days)
   const [gender, setGender] = useState<Gender>(() => BOOT_STATE.gender)
   const [travelerType, setTravelerType] = useState<TravelerType>(() => BOOT_STATE.travelerType)
@@ -1001,7 +976,9 @@ function App() {
   const chooseLang = (l: Lang) => {
     if (l !== lang) track('language_change')
     setLang(l)
-    try { localStorage.setItem(LANG_KEY, l) } catch { /* ignore */ }
+    setLangSource('saved')
+    try { localStorage.setItem(LANG_CHOICE_KEY, l) } catch { /* ignore */ }
+    syncLangPath(l)
   }
 
   useEffect(() => {
@@ -1195,7 +1172,10 @@ function App() {
     if (!restorePoint) return
     applyTrip(restorePoint.state)
     setPacked(restorePoint.packed)
-    if (restorePoint.lang) setLang(restorePoint.lang)
+    if (restorePoint.lang) {
+      setLang(restorePoint.lang)
+      setLangSource('saved')
+    }
     clearRestorePoint(localStorage)
     setRestorePoint(null)
   }
@@ -1241,7 +1221,12 @@ function App() {
           </div>
 
           <div className="pm-hero-right">
-            <LanguagePicker lang={lang} onChange={chooseLang} label={t.language} />
+            <LanguagePicker
+              lang={lang}
+              onChange={chooseLang}
+              label={t.language}
+              fallbackNote={langSource === 'fallback'}
+            />
             <div className="pm-kpis">
               <Kpi label={t.kpi.items}  value={String(totalItems)} accent />
               <Kpi
@@ -1870,10 +1855,13 @@ function LanguagePicker({
   lang,
   onChange,
   label,
+  fallbackNote = false,
 }: {
   lang: Lang
   onChange: (l: Lang) => void
   label: string
+  /** None of the browser's languages is supported: say so, plainly, in English. */
+  fallbackNote?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -1908,6 +1896,14 @@ function LanguagePicker({
         <span className="pm-lang-name">{current.name}</span>
         <span className="pm-lang-caret" aria-hidden>▾</span>
       </button>
+      {fallbackNote && !open && (
+        <p className="pm-lang-note" lang="en" dir="ltr">
+          Language: English -{' '}
+          <button type="button" className="pm-lang-note-btn" onClick={() => setOpen(true)}>
+            change
+          </button>
+        </p>
+      )}
       {open && (
         <ul className="pm-lang-menu" role="listbox">
           {LANGS.map((l) => (
@@ -2119,6 +2115,11 @@ const packmateCss = `
   color: var(--pm-text); text-align: start;
 }
 .pm-lang-item:hover { background: var(--pm-accent-bg); }
+.pm-lang-note { margin: 6px 4px 0; font-size: 12px; color: var(--pm-muted); text-align: end; }
+.pm-lang-note-btn {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: var(--pm-accent-strong); text-decoration: underline; text-underline-offset: 2px;
+}
 .pm-lang-item-active { background: var(--pm-accent-bg); color: var(--pm-accent-strong); font-weight: 600; }
 
 /* ========== warnings ========== */

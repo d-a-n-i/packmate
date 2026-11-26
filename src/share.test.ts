@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
+import { LANG_CHOICE_KEY } from './lang'
 import { normalizeTrip } from './packing'
 import {
   PACKED_KEY,
@@ -19,7 +20,7 @@ class MemoryKV implements KV {
   removeItem(k: string) { this.map.delete(k) }
 }
 
-const LANG_KEY = 'packmate.lang'
+const LANG_KEY = LANG_CHOICE_KEY
 const mine = normalizeTrip({ days: 4, travelType: 'ski', gender: 'female', limitKg: 8, worn: ['jacket'], overrides: { socks: 6 } })
 const theirs = normalizeTrip({ days: 10, travelType: 'summer', travelerType: 'lean', laundryDays: 5 })
 const other = normalizeTrip({ days: 2, travelType: 'business' })
