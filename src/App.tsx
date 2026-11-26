@@ -8,59 +8,63 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from 'react'
 
+import {
+  CATEGORY_ORDER,
+  DEFAULT_TRIP,
+  bagQty,
+  chooseLuggage,
+  computeTotals,
+  isCabinLimit,
+  listQty,
+  normalizeTrip,
+  resolveItems,
+  suggestedQty,
+  wornQty,
+  BACKPACK_MAX_L,
+  BAG_LIMITS,
+  CABIN_MAX_KG,
+  LAUNDRY_OPTIONS,
+  type LaundryDays,
+  CARRY_ON_MAX_L,
+  type BagLimit,
+  type LuggageKey,
+  type Category,
+  type Gender,
+  type ResolvedItem,
+  type TravelType,
+  type TravelerType,
+  type TripState,
+} from './packing'
+
 /* ============================================================ TYPES ============================================================ */
 
-type Lang = 'en' | 'ru' | 'bg' | 'he'
-type Gender = 'male' | 'female'
-type TravelerType = 'lean' | 'it' | 'prepared'
-type TravelType = 'city' | 'summer' | 'ski' | 'hiking' | 'business'
-
-type Category =
-  | 'documents'
-  | 'electronics'
-  | 'clothing'
-  | 'outerwear'
-  | 'footwear'
-  | 'toiletries'
-  | 'health'
-  | 'extras'
-  | 'specialty'
-
-interface PackItem {
-  id: string
-  emoji: string
-  category: Category
-  /** Per-day multiplier for scaling items. 0 for fixed items. */
-  basePerDay: number
-  weightKg: number
-  volumeL: number
-  /** Fixed items always default to a quantity of 1. */
-  fixed: boolean
-  gender?: Gender
-  /** Baseline essential flag (additional essentials come from traveler / travel type). */
-  essential?: boolean
-  /** Show only on these travel types. */
-  onlyTravelTypes?: TravelType[]
-}
-
-interface ResolvedItem extends PackItem {
-  /** Final essential flag after traveler / travel type rules applied. */
-  essential: boolean
-}
-
-interface AppState {
-  days: number
-  gender: Gender
-  travelerType: TravelerType
-  travelType: TravelType
-  overrides: Record<string, number>
-}
+import { noteVisit, track, trackOncePerPage } from './analytics'
+import { DAY_SUFFIX, LANGS, TRANSLATIONS, dirOf } from './i18n'
+import {
+  LANG_CHOICE_KEY,
+  LANG_PATH,
+  LEGACY_LANG_KEY,
+  browserLanguages,
+  detectLanguage,
+  isLang,
+  langFromPath,
+  type Lang,
+  type LangSource,
+} from './lang'
+import {
+  PACKED_KEY,
+  STATE_KEY,
+  bootFromSearch,
+  clearRestorePoint,
+  encodeTrip,
+  type RestorePoint,
+} from './share'
 
 interface Snapshot {
   id: string
   name: string
   savedAt: number
-  state: AppState
+  state: TripState
 }
 
 interface Warning {
@@ -68,25 +72,7 @@ interface Warning {
   msg: string
 }
 
-interface Luggage {
-  nameKey: 'backpack' | 'carryOn' | 'suitcase'
-  emoji: string
-  tier: 1 | 2 | 3
-}
-
 /* ============================================================ ITEMS ============================================================ */
-
-const CATEGORY_ORDER: Category[] = [
-  'documents',
-  'electronics',
-  'clothing',
-  'outerwear',
-  'footwear',
-  'toiletries',
-  'health',
-  'extras',
-  'specialty',
-]
 
 const CATEGORY_EMOJI: Record<Category, string> = {
   documents: '📑',
@@ -100,813 +86,59 @@ const CATEGORY_EMOJI: Record<Category, string> = {
   specialty: '⛰️',
 }
 
-const ITEMS: PackItem[] = [
-  // Documents & Money
-  { id: 'passport',     emoji: '📔', category: 'documents', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true, essential: true },
-  { id: 'wallet',       emoji: '👛', category: 'documents', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true, essential: true },
-  { id: 'id-card',      emoji: '🪪', category: 'documents', basePerDay: 0, weightKg: 0.01, volumeL: 0.02, fixed: true, essential: true },
-  { id: 'cash-cards',   emoji: '💳', category: 'documents', basePerDay: 0, weightKg: 0.03, volumeL: 0.05, fixed: true, essential: true },
-  { id: 'insurance',    emoji: '📄', category: 'documents', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true },
 
-  // Electronics
-  { id: 'phone',          emoji: '📱', category: 'electronics', basePerDay: 0, weightKg: 0.20, volumeL: 0.15, fixed: true, essential: true },
-  { id: 'charger',        emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.12, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'power-adapter',  emoji: '🔌', category: 'electronics', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true },
-  { id: 'power-bank',     emoji: '🔋', category: 'electronics', basePerDay: 0, weightKg: 0.35, volumeL: 0.40, fixed: true },
-  { id: 'headphones',     emoji: '🎧', category: 'electronics', basePerDay: 0, weightKg: 0.25, volumeL: 0.60, fixed: true },
-  { id: 'laptop',         emoji: '💻', category: 'electronics', basePerDay: 0, weightKg: 1.50, volumeL: 2.00, fixed: true },
-  { id: 'laptop-charger', emoji: '⚡', category: 'electronics', basePerDay: 0, weightKg: 0.40, volumeL: 0.50, fixed: true },
-  { id: 'camera',         emoji: '📷', category: 'electronics', basePerDay: 0, weightKg: 0.60, volumeL: 1.00, fixed: true },
+const LUGGAGE_EMOJI: Record<LuggageKey, string> = { backpack: '🎒', carryOn: '🧳', suitcase: '🧰' }
 
-  // Clothing (mostly scaling)
-  { id: 'tshirts',   emoji: '👕', category: 'clothing', basePerDay: 1,    weightKg: 0.18, volumeL: 0.60, fixed: false, essential: true },
-  { id: 'underwear', emoji: '🩲', category: 'clothing', basePerDay: 1,    weightKg: 0.05, volumeL: 0.15, fixed: false, essential: true },
-  { id: 'socks',     emoji: '🧦', category: 'clothing', basePerDay: 1,    weightKg: 0.06, volumeL: 0.20, fixed: false, essential: true },
-  { id: 'pants',     emoji: '👖', category: 'clothing', basePerDay: 0.34, weightKg: 0.55, volumeL: 1.20, fixed: false },
-  { id: 'shorts',      emoji: '🩳', category: 'clothing', basePerDay: 0.30, weightKg: 0.25, volumeL: 0.60, fixed: false },
-  { id: 'dress-shirt', emoji: '👔', category: 'clothing', basePerDay: 0.50, weightKg: 0.25, volumeL: 0.80, fixed: false, onlyTravelTypes: ['city', 'business'] },
-  { id: 'pajamas',   emoji: '🛌', category: 'clothing', basePerDay: 0,    weightKg: 0.30, volumeL: 0.70, fixed: true },
-  { id: 'swimwear',  emoji: '🩳', category: 'clothing', basePerDay: 0,    weightKg: 0.15, volumeL: 0.30, fixed: true },
+/* ============================================================ LANGUAGE ============================================================ */
 
-  // Outerwear
-  { id: 'sweater',     emoji: '🧶', category: 'outerwear', basePerDay: 0, weightKg: 0.50, volumeL: 1.80, fixed: true },
-  { id: 'jacket',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.90, volumeL: 3.50, fixed: true },
-  { id: 'rain-jacket', emoji: '☔', category: 'outerwear', basePerDay: 0, weightKg: 0.30, volumeL: 0.80, fixed: true },
-  { id: 'blazer',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.70, volumeL: 3.00, fixed: true, onlyTravelTypes: ['business'] },
+// The rules live in lang.ts (saved choice > entry-page path > browser
+// languages in order > English with a note). No country or timezone is used.
 
-  // Footwear
-  { id: 'sneakers',    emoji: '👟', category: 'footwear', basePerDay: 0, weightKg: 0.80, volumeL: 2.50, fixed: true, essential: true },
-  { id: 'sandals',     emoji: '🩴', category: 'footwear', basePerDay: 0, weightKg: 0.30, volumeL: 1.00, fixed: true },
-  { id: 'dress-shoes', emoji: '👞', category: 'footwear', basePerDay: 0, weightKg: 0.70, volumeL: 2.00, fixed: true },
-
-  // Toiletries
-  { id: 'toothbrush', emoji: '🪥', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true, essential: true },
-  { id: 'toothpaste', emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
-  { id: 'soap',       emoji: '🧼', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
-  { id: 'shampoo',    emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.20, volumeL: 0.25, fixed: true },
-  { id: 'deodorant',  emoji: '🌬️', category: 'toiletries', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true },
-  { id: 'sunscreen',  emoji: '🧴', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.20, fixed: true },
-  { id: 'chapstick',  emoji: '💋', category: 'toiletries', basePerDay: 0, weightKg: 0.02, volumeL: 0.04, fixed: true },
-  { id: 'hand-sanitizer', emoji: '🫧', category: 'toiletries', basePerDay: 0, weightKg: 0.08, volumeL: 0.10, fixed: true },
-  { id: 'period-care',    emoji: '🌸', category: 'toiletries', basePerDay: 0, weightKg: 0.15, volumeL: 0.25, fixed: true, gender: 'female' },
-  { id: 'shaving',    emoji: '🪒', category: 'toiletries', basePerDay: 0, weightKg: 0.35, volumeL: 0.80, fixed: true, gender: 'male' },
-  { id: 'makeup',     emoji: '💄', category: 'toiletries', basePerDay: 0, weightKg: 0.55, volumeL: 1.20, fixed: true, gender: 'female' },
-
-  // Health & Comfort
-  { id: 'medications',   emoji: '💊', category: 'health', basePerDay: 0, weightKg: 0.15, volumeL: 0.30, fixed: true, essential: true },
-  { id: 'first-aid',     emoji: '⛑️', category: 'health', basePerDay: 0, weightKg: 0.25, volumeL: 0.50, fixed: true },
-  { id: 'insect-repellent', emoji: '🦟', category: 'health', basePerDay: 0, weightKg: 0.10, volumeL: 0.15, fixed: true, essential: true, onlyTravelTypes: ['summer', 'hiking'] },
-  { id: 'travel-pillow', emoji: '💺', category: 'health', basePerDay: 0, weightKg: 0.30, volumeL: 2.00, fixed: true },
-  { id: 'sleep-mask',    emoji: '😴', category: 'health', basePerDay: 0, weightKg: 0.05, volumeL: 0.10, fixed: true },
-
-  // Travel Extras
-  { id: 'water-bottle', emoji: '💧', category: 'extras', basePerDay: 0, weightKg: 0.15, volumeL: 0.70, fixed: true },
-  { id: 'book',         emoji: '📖', category: 'extras', basePerDay: 0, weightKg: 0.30, volumeL: 0.50, fixed: true },
-  { id: 'sunglasses',   emoji: '🕶️', category: 'extras', basePerDay: 0, weightKg: 0.05, volumeL: 0.20, fixed: true },
-  { id: 'day-backpack', emoji: '🎒', category: 'extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
-  { id: 'umbrella',     emoji: '☂️', category: 'extras', basePerDay: 0, weightKg: 0.40, volumeL: 1.00, fixed: true },
-
-  // Specialty Gear (gated by travel type)
-  { id: 'ski-gloves',    emoji: '🧤', category: 'specialty', basePerDay: 0, weightKg: 0.20, volumeL: 0.60, fixed: true, onlyTravelTypes: ['ski'] },
-  { id: 'ski-goggles',   emoji: '🥽', category: 'specialty', basePerDay: 0, weightKg: 0.15, volumeL: 0.40, fixed: true, onlyTravelTypes: ['ski'] },
-  { id: 'beanie',        emoji: '🎿', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['ski'] },
-  { id: 'hiking-boots',  emoji: '🥾', category: 'specialty', basePerDay: 0, weightKg: 1.10, volumeL: 3.00, fixed: true, onlyTravelTypes: ['hiking'] },
-  { id: 'beach-towel',   emoji: '🏖️', category: 'specialty', basePerDay: 0, weightKg: 0.40, volumeL: 1.40, fixed: true, onlyTravelTypes: ['summer'] },
-  { id: 'necktie',       emoji: '👔', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['business'] },
-]
-
-/* ============================================================ PROFILE RULES ============================================================ */
-
-const TRAVEL_HIDE: Record<TravelType, string[]> = {
-  city:     [],
-  summer:   ['jacket', 'sweater', 'rain-jacket'],
-  ski:      ['swimwear', 'sandals', 'dress-shoes', 'shorts'],
-  hiking:   ['dress-shoes', 'swimwear', 'sandals'],
-  business: ['swimwear', 'sandals', 'shorts'],
+/** The language explicitly chosen with the switch (detection and links never write it). */
+function readSavedLang(): Lang | null {
+  try {
+    const v = localStorage.getItem(LANG_CHOICE_KEY)
+    return isLang(v) ? v : null
+  } catch {
+    return null
+  }
 }
 
-const TRAVEL_ESSENTIALS: Record<TravelType, string[]> = {
-  city:     [],
-  summer:   ['sunscreen', 'sunglasses', 'sandals', 'swimwear', 'beach-towel', 'shorts'],
-  ski:      ['jacket', 'sweater', 'ski-gloves', 'ski-goggles', 'beanie'],
-  hiking:   ['water-bottle', 'day-backpack', 'hiking-boots', 'sunscreen'],
-  business: ['dress-shoes', 'dress-shirt', 'blazer', 'pants', 'laptop'],
-}
-
-const TRAVELER_HIDE: Record<TravelerType, string[]> = {
-  lean:     ['laptop', 'laptop-charger', 'camera', 'travel-pillow', 'day-backpack', 'umbrella', 'dress-shoes', 'sweater', 'pajamas', 'sleep-mask', 'first-aid', 'book'],
-  it:       [],
-  prepared: [],
-}
-
-const TRAVELER_ESSENTIALS: Record<TravelerType, string[]> = {
-  lean:     [],
-  it:       ['laptop', 'laptop-charger', 'headphones', 'power-adapter', 'power-bank'],
-  prepared: ['first-aid', 'medications', 'day-backpack', 'umbrella', 'sleep-mask', 'insurance', 'water-bottle', 'power-bank', 'hand-sanitizer'],
-}
-
-function resolveItems(
-  gender: Gender,
-  traveler: TravelerType,
-  travelType: TravelType,
-): ResolvedItem[] {
-  const hideSet = new Set([...TRAVEL_HIDE[travelType], ...TRAVELER_HIDE[traveler]])
-  const essentialSet = new Set([...TRAVEL_ESSENTIALS[travelType], ...TRAVELER_ESSENTIALS[traveler]])
-  return ITEMS.flatMap((it) => {
-    if (it.gender && it.gender !== gender) return []
-    if (it.onlyTravelTypes && !it.onlyTravelTypes.includes(travelType)) return []
-    // A trip/traveler essential is never hidden by the *other* axis' hide list
-    // (e.g. Lean hides the sweater, but a Ski trip still needs it).
-    if (hideSet.has(it.id) && !essentialSet.has(it.id)) return []
-    return [{ ...it, essential: !!it.essential || essentialSet.has(it.id) } as ResolvedItem]
+function bootLanguage(): { lang: Lang; source: LangSource } {
+  if (typeof window === 'undefined') return { lang: 'en', source: 'fallback' }
+  try { localStorage.removeItem(LEGACY_LANG_KEY) } catch { /* ignore */ }
+  return detectLanguage({
+    saved: readSavedLang(),
+    pathLang: langFromPath(window.location.pathname),
+    languages: browserLanguages(typeof navigator !== 'undefined' ? navigator : undefined),
   })
 }
 
-/* ============================================================ I18N ============================================================ */
-
-interface Translations {
-  tagline: string
-  subtitle: string
-  kpi: { items: string; weight: string; volume: string }
-  units: { kg: string; l: string }
-  controls: {
-    tripLength: string
-    day: string
-    days: string
-    traveler: string
-    travelerHint: string
-    gender: string
-    genderHint: string
-    male: string
-    female: string
-    travelType: string
-    travelTypeHint: string
-  }
-  list: {
-    title: string
-    breakdown: (n: number, c: number, d: number) => string
-    pieces: (n: number) => string
-    fixedItem: string
-    suggested: string
-    perDay: string
-    essential: string
-    genderTag: { male: string; female: string }
-  }
-  telemetry: { title: string; volume: string; weight: string }
-  luggage: {
-    title: string
-    backpack: string
-    carryOn: string
-    suitcase: string
-    capacityUpTo: (n: number) => string
-    capacityBetween: (a: number, b: number) => string
-    capacityOver: (n: number) => string
-    barBackpack: string
-    barCarryOn: string
-    barSuitcase: string
-    tier: (n: number) => string
-  }
-  snapshots: {
-    title: string
-    placeholder: string
-    save: string
-    empty: string
-    load: string
-    delete: string
-    autoSaved: string
-    confirmDelete: string
-  }
-  warnings: {
-    overweight: (kg: string) => string
-    overvolume: (l: string) => string
-    overpacked: (emoji: string, name: string, qty: number, sugg: number) => string
-    fixedOver: (emoji: string, name: string, qty: number) => string
-    essential0: (emoji: string, name: string) => string
-    lowScaling: (emoji: string, name: string, qty: number, days: number, sugg: number) => string
-  }
-  categories: Record<Category, string>
-  travelers: Record<TravelerType, { name: string; tagline: string; emoji: string }>
-  travelTypes: Record<TravelType, { name: string; emoji: string }>
-  items: Record<string, string>
-  pack: {
-    label: string
-    progress: (n: number, total: number) => string
-    allPacked: string
-    clear: string
-    checkAria: (name: string) => string
-  }
-  share: { button: string; copied: string }
-  print: string
-  footer: string
-  language: string
-}
-
-const LANGS: { code: Lang; flag: string; name: string }[] = [
-  { code: 'en', flag: '🇬🇧', name: 'English' },
-  { code: 'ru', flag: '🇷🇺', name: 'Русский' },
-  { code: 'bg', flag: '🇧🇬', name: 'Български' },
-  { code: 'he', flag: '🇮🇱', name: 'עברית' },
-]
-
-/** Languages that render right-to-left. */
-const RTL_LANGS = new Set<Lang>(['he'])
-const isRtl = (l: Lang) => RTL_LANGS.has(l)
-const dirOf = (l: Lang): 'rtl' | 'ltr' => (isRtl(l) ? 'rtl' : 'ltr')
-
-/** Short day suffix used in auto-generated snapshot names. */
-const DAY_SUFFIX: Record<Lang, string> = { en: 'd', ru: 'дн', bg: 'дн', he: 'ד' }
-
-const TRAVELER_EMOJI: Record<TravelerType, string> = { lean: '🪶', it: '💻', prepared: '🛡️' }
-const TRAVEL_TYPE_EMOJI: Record<TravelType, string> = {
-  city: '🏙️',
-  summer: '🏖️',
-  ski: '⛷️',
-  hiking: '🥾',
-  business: '💼',
-}
-
-const T_EN: Translations = {
-  tagline: 'Smart packing for any trip',
-  subtitle: 'Powered by math, not vibes. Set your trip, the list balances itself.',
-  kpi: { items: 'Items', weight: 'Weight', volume: 'Volume' },
-  units: { kg: 'kg', l: 'L' },
-  controls: {
-    tripLength: 'Trip length',
-    day: 'day',
-    days: 'days',
-    traveler: 'Traveler profile',
-    travelerHint: 'tunes the essentials',
-    gender: 'Hygiene profile',
-    genderHint: 'shows the matching kit',
-    male: 'Male',
-    female: 'Female',
-    travelType: 'Trip type',
-    travelTypeHint: 'shapes the gear list',
-  },
-  list: {
-    title: 'Packing list',
-    breakdown: (n, c, d) => `${n} items · ${c} categories · ${d}d`,
-    pieces: (n) => (n === 1 ? '1 piece' : `${n} pieces`),
-    fixedItem: 'Fixed item',
-    suggested: 'suggested',
-    perDay: '/ day',
-    essential: 'essential',
-    genderTag: { male: 'male', female: 'female' },
-  },
-  telemetry: { title: 'Live telemetry', volume: 'Volume', weight: 'Weight' },
-  luggage: {
-    title: 'Recommended luggage',
-    backpack: 'Compact Backpack',
-    carryOn: 'Carry-on Trolley',
-    suitcase: 'Large Rolling Suitcase',
-    capacityUpTo: (n) => `up to ${n} L`,
-    capacityBetween: (a, b) => `${a} – ${b} L`,
-    capacityOver: (n) => `${n} L +`,
-    barBackpack: 'Backpack',
-    barCarryOn: 'Carry-on',
-    barSuitcase: 'Suitcase',
-    tier: (n) => `tier ${n}/3`,
-  },
-  snapshots: {
-    title: 'Saved trips',
-    placeholder: 'Name this trip (e.g. Sofia weekend)',
-    save: 'Save trip',
-    empty: 'No saved trips yet. Save the current setup to compare later.',
-    load: 'Load',
-    delete: 'Delete',
-    autoSaved: 'Auto-saved locally',
-    confirmDelete: 'Delete this saved trip?',
-  },
-  warnings: {
-    overweight: (kg) => `Total weight is ${kg} kg — that's over the standard 20 kg airline allowance.`,
-    overvolume: (l) => `Total volume is ${l} L — past carry-on size, consider trimming the list.`,
-    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} is more than double the suggested ${sugg}.`,
-    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} feels excessive for a single-item essential.`,
-    essential0: (emoji, name) => `${emoji} ${name} is at 0 — you can't leave home without it!`,
-    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: only ${qty} for a ${days}-day trip (suggested ${sugg}) — you'll run out.`,
-  },
-  categories: {
-    documents: 'Documents & Money',
-    electronics: 'Electronics',
-    clothing: 'Clothing',
-    outerwear: 'Outerwear',
-    footwear: 'Footwear',
-    toiletries: 'Toiletries',
-    health: 'Health & Comfort',
-    extras: 'Travel Extras',
-    specialty: 'Specialty Gear',
-  },
-  travelers: {
-    lean:     { name: 'Lean',     tagline: 'Bare minimum, fast moves',  emoji: TRAVELER_EMOJI.lean },
-    it:       { name: 'IT Pro',   tagline: 'Tech-heavy load-out',       emoji: TRAVELER_EMOJI.it },
-    prepared: { name: 'Prepared', tagline: 'Ready for anything',        emoji: TRAVELER_EMOJI.prepared },
-  },
-  travelTypes: {
-    city:     { name: 'City',           emoji: TRAVEL_TYPE_EMOJI.city },
-    summer:   { name: 'Beach / Summer', emoji: TRAVEL_TYPE_EMOJI.summer },
-    ski:      { name: 'Ski / Snow',     emoji: TRAVEL_TYPE_EMOJI.ski },
-    hiking:   { name: 'Hiking',         emoji: TRAVEL_TYPE_EMOJI.hiking },
-    business: { name: 'Business',       emoji: TRAVEL_TYPE_EMOJI.business },
-  },
-  items: {
-    passport: 'Passport', wallet: 'Wallet', 'id-card': 'ID Card',
-    'cash-cards': 'Cash & Cards', insurance: 'Travel Insurance Docs',
-    phone: 'Phone', charger: 'Phone Charger', 'power-adapter': 'Power Adapter',
-    headphones: 'Headphones', laptop: 'Laptop', 'laptop-charger': 'Laptop Charger',
-    camera: 'Camera',
-    tshirts: 'T-Shirts', underwear: 'Underwear', socks: 'Socks',
-    pants: 'Pants / Jeans', pajamas: 'Pajamas', swimwear: 'Swimwear',
-    sweater: 'Sweater / Hoodie', jacket: 'Heavy Jacket', 'rain-jacket': 'Rain Jacket',
-    sneakers: 'Sneakers', sandals: 'Sandals / Flip-flops', 'dress-shoes': 'Dress Shoes',
-    toothbrush: 'Toothbrush', toothpaste: 'Toothpaste',
-    soap: 'Soap & Body Wash', shampoo: 'Shampoo & Conditioner',
-    deodorant: 'Deodorant', sunscreen: 'Sunscreen', chapstick: 'Chapstick',
-    shaving: 'Shaving Kit', makeup: 'Makeup & Hygiene Kit',
-    medications: 'Medications', 'first-aid': 'First Aid Kit',
-    'travel-pillow': 'Travel Pillow', 'sleep-mask': 'Eye Mask & Earplugs',
-    'water-bottle': 'Reusable Water Bottle', book: 'Book / E-Reader',
-    sunglasses: 'Sunglasses', 'day-backpack': 'Day Backpack (folded)',
-    umbrella: 'Compact Umbrella',
-    'ski-gloves': 'Ski Gloves', 'ski-goggles': 'Ski Goggles', beanie: 'Beanie / Wool Hat',
-    'hiking-boots': 'Hiking Boots', 'beach-towel': 'Beach Towel', necktie: 'Necktie',
-    'power-bank': 'Power Bank', shorts: 'Shorts',
-    'dress-shirt': 'Dress Shirt / Blouse', blazer: 'Blazer / Sport Coat',
-    'hand-sanitizer': 'Hand Sanitizer', 'period-care': 'Period Products',
-    'insect-repellent': 'Insect Repellent',
-  },
-  pack: {
-    label: 'Packing progress',
-    progress: (n, total) => `${n} / ${total} packed`,
-    allPacked: 'All packed — you are ready to go!',
-    clear: 'Uncheck all',
-    checkAria: (name) => `Mark ${name} as packed`,
-  },
-  share: { button: 'Share trip', copied: 'Link copied!' },
-  print: 'Print / PDF',
-  footer: 'PackMate · pack light, travel far.',
-  language: 'Language',
-}
-
-const T_RU: Translations = {
-  tagline: 'Умная упаковка для любой поездки',
-  subtitle: 'Расчёт, а не интуиция. Задаёте параметры — список считается сам.',
-  kpi: { items: 'Предметы', weight: 'Вес', volume: 'Объём' },
-  units: { kg: 'кг', l: 'л' },
-  controls: {
-    tripLength: 'Длительность',
-    day: 'день',
-    days: 'дн.',
-    traveler: 'Профиль путешественника',
-    travelerHint: 'настраивает обязательное',
-    gender: 'Профиль гигиены',
-    genderHint: 'показывает нужный набор',
-    male: 'Мужской',
-    female: 'Женский',
-    travelType: 'Тип поездки',
-    travelTypeHint: 'формирует список снаряжения',
-  },
-  list: {
-    title: 'Список вещей',
-    breakdown: (n, c, d) => `${n} предм. · ${c} кат. · ${d} дн.`,
-    pieces: (n) => `${n} шт.`,
-    fixedItem: 'Фикс. предмет',
-    suggested: 'нужно',
-    perDay: '/ день',
-    essential: 'обязательно',
-    genderTag: { male: 'муж.', female: 'жен.' },
-  },
-  telemetry: { title: 'Текущие показатели', volume: 'Объём', weight: 'Вес' },
-  luggage: {
-    title: 'Рекомендуемый багаж',
-    backpack: 'Компактный рюкзак',
-    carryOn: 'Ручная кладь',
-    suitcase: 'Большой чемодан',
-    capacityUpTo: (n) => `до ${n} л`,
-    capacityBetween: (a, b) => `${a} – ${b} л`,
-    capacityOver: (n) => `${n} л +`,
-    barBackpack: 'Рюкзак',
-    barCarryOn: 'Ручная',
-    barSuitcase: 'Чемодан',
-    tier: (n) => `${n}/3`,
-  },
-  snapshots: {
-    title: 'Сохранённые поездки',
-    placeholder: 'Название поездки (напр., «Уикенд в Софии»)',
-    save: 'Сохранить',
-    empty: 'Пока ничего не сохранено. Сохраните текущий набор, чтобы вернуться к нему.',
-    load: 'Загрузить',
-    delete: 'Удалить',
-    autoSaved: 'Автосохранено локально',
-    confirmDelete: 'Удалить эту поездку?',
-  },
-  warnings: {
-    overweight: (kg) => `Общий вес ${kg} кг — это больше стандартного лимита 20 кг.`,
-    overvolume: (l) => `Общий объём ${l} л — это больше ручной клади, лучше что-то убрать.`,
-    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — это более чем вдвое от ${sugg} рекомендованных.`,
-    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — слишком много для одного предмета.`,
-    essential0: (emoji, name) => `${emoji} ${name} = 0 — без этого нельзя!`,
-    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: всего ${qty} на ${days} дн. (нужно ${sugg}) — не хватит.`,
-  },
-  categories: {
-    documents: 'Документы и деньги',
-    electronics: 'Электроника',
-    clothing: 'Одежда',
-    outerwear: 'Верхняя одежда',
-    footwear: 'Обувь',
-    toiletries: 'Гигиена',
-    health: 'Здоровье и комфорт',
-    extras: 'Дорожные мелочи',
-    specialty: 'Специальное снаряжение',
-  },
-  travelers: {
-    lean:     { name: 'Минимум',       tagline: 'Только самое нужное',     emoji: TRAVELER_EMOJI.lean },
-    it:       { name: 'IT-специалист', tagline: 'Полный технический набор', emoji: TRAVELER_EMOJI.it },
-    prepared: { name: 'Подготовленный',tagline: 'Готов ко всему',           emoji: TRAVELER_EMOJI.prepared },
-  },
-  travelTypes: {
-    city:     { name: 'Город',       emoji: TRAVEL_TYPE_EMOJI.city },
-    summer:   { name: 'Пляж / лето', emoji: TRAVEL_TYPE_EMOJI.summer },
-    ski:      { name: 'Лыжи / снег', emoji: TRAVEL_TYPE_EMOJI.ski },
-    hiking:   { name: 'Поход',       emoji: TRAVEL_TYPE_EMOJI.hiking },
-    business: { name: 'Бизнес',      emoji: TRAVEL_TYPE_EMOJI.business },
-  },
-  items: {
-    passport: 'Паспорт', wallet: 'Кошелёк', 'id-card': 'Удостоверение',
-    'cash-cards': 'Наличные и карты', insurance: 'Страховые документы',
-    phone: 'Телефон', charger: 'Зарядка для телефона', 'power-adapter': 'Сетевой адаптер',
-    headphones: 'Наушники', laptop: 'Ноутбук', 'laptop-charger': 'Зарядка для ноутбука',
-    camera: 'Камера',
-    tshirts: 'Футболки', underwear: 'Нижнее бельё', socks: 'Носки',
-    pants: 'Брюки / джинсы', pajamas: 'Пижама', swimwear: 'Купальник / плавки',
-    sweater: 'Свитер / худи', jacket: 'Тёплая куртка', 'rain-jacket': 'Дождевик',
-    sneakers: 'Кроссовки', sandals: 'Сандалии / шлёпанцы', 'dress-shoes': 'Туфли',
-    toothbrush: 'Зубная щётка', toothpaste: 'Зубная паста',
-    soap: 'Мыло / гель', shampoo: 'Шампунь и кондиционер',
-    deodorant: 'Дезодорант', sunscreen: 'Солнцезащитный крем', chapstick: 'Гигиеническая помада',
-    shaving: 'Бритвенный набор', makeup: 'Косметика и гигиена',
-    medications: 'Лекарства', 'first-aid': 'Аптечка',
-    'travel-pillow': 'Дорожная подушка', 'sleep-mask': 'Маска для сна и беруши',
-    'water-bottle': 'Бутылка для воды', book: 'Книга / читалка',
-    sunglasses: 'Солнечные очки', 'day-backpack': 'Складной рюкзак',
-    umbrella: 'Компактный зонт',
-    'ski-gloves': 'Лыжные перчатки', 'ski-goggles': 'Лыжные очки', beanie: 'Шапка',
-    'hiking-boots': 'Походные ботинки', 'beach-towel': 'Пляжное полотенце', necktie: 'Галстук',
-    'power-bank': 'Внешний аккумулятор', shorts: 'Шорты',
-    'dress-shirt': 'Рубашка / блузка', blazer: 'Пиджак',
-    'hand-sanitizer': 'Антисептик для рук', 'period-care': 'Средства гигиены',
-    'insect-repellent': 'Средство от насекомых',
-  },
-  pack: {
-    label: 'Прогресс сборов',
-    progress: (n, total) => `${n} / ${total} собрано`,
-    allPacked: 'Всё собрано — можно в путь!',
-    clear: 'Снять отметки',
-    checkAria: (name) => `Отметить «${name}» как собранное`,
-  },
-  share: { button: 'Поделиться', copied: 'Ссылка скопирована!' },
-  print: 'Печать / PDF',
-  footer: 'PackMate · меньше вещей — больше дорог.',
-  language: 'Язык',
-}
-
-const T_BG: Translations = {
-  tagline: 'Умно стягане за всяко пътуване',
-  subtitle: 'Сметката е наука, не интуиция. Задаваш дните — списъкът се сглобява сам.',
-  kpi: { items: 'Предмети', weight: 'Тегло', volume: 'Обем' },
-  units: { kg: 'кг', l: 'л' },
-  controls: {
-    tripLength: 'Дължина на пътуването',
-    day: 'ден',
-    days: 'дни',
-    traveler: 'Профил на пътуващия',
-    travelerHint: 'настройва задължителното',
-    gender: 'Хигиенен профил',
-    genderHint: 'показва съответния комплект',
-    male: 'Мъжки',
-    female: 'Женски',
-    travelType: 'Вид пътуване',
-    travelTypeHint: 'оформя списъка с екипировка',
-  },
-  list: {
-    title: 'Списък за стягане',
-    breakdown: (n, c, d) => `${n} предмета · ${c} категории · ${d} дни`,
-    pieces: (n) => `${n} бр.`,
-    fixedItem: 'Фикс. предмет',
-    suggested: 'препоръчани',
-    perDay: '/ ден',
-    essential: 'задължително',
-    genderTag: { male: 'мъжки', female: 'женски' },
-  },
-  telemetry: { title: 'Текуща телеметрия', volume: 'Обем', weight: 'Тегло' },
-  luggage: {
-    title: 'Препоръчан багаж',
-    backpack: 'Компактна раница',
-    carryOn: 'Ръчен багаж',
-    suitcase: 'Голям куфар',
-    capacityUpTo: (n) => `до ${n} л`,
-    capacityBetween: (a, b) => `${a} – ${b} л`,
-    capacityOver: (n) => `${n} л +`,
-    barBackpack: 'Раница',
-    barCarryOn: 'Ръчен',
-    barSuitcase: 'Куфар',
-    tier: (n) => `ниво ${n}/3`,
-  },
-  snapshots: {
-    title: 'Запазени пътувания',
-    placeholder: 'Име на пътуването (напр. „Уикенд в София“)',
-    save: 'Запази',
-    empty: 'Все още няма запазени пътувания. Запази текущата конфигурация, за да я сравниш.',
-    load: 'Зареди',
-    delete: 'Изтрий',
-    autoSaved: 'Автоматично запазено локално',
-    confirmDelete: 'Да изтрия ли това пътуване?',
-  },
-  warnings: {
-    overweight: (kg) => `Общото тегло е ${kg} кг — над стандартния лимит от 20 кг.`,
-    overvolume: (l) => `Общият обем е ${l} л — над размера на ръчен багаж, орежи нещо.`,
-    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} е повече от двойно над препоръчаните ${sugg}.`,
-    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} е твърде много за един предмет.`,
-    essential0: (emoji, name) => `${emoji} ${name} е на 0 — не може без него!`,
-    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: само ${qty} за ${days} дни (нужни ${sugg}) — няма да стигнат.`,
-  },
-  categories: {
-    documents: 'Документи и пари',
-    electronics: 'Електроника',
-    clothing: 'Облекло',
-    outerwear: 'Връхни дрехи',
-    footwear: 'Обувки',
-    toiletries: 'Тоалетни принадлежности',
-    health: 'Здраве и комфорт',
-    extras: 'Дребни неща за път',
-    specialty: 'Специална екипировка',
-  },
-  travelers: {
-    lean:     { name: 'Минимално',         tagline: 'Само най-нужното',          emoji: TRAVELER_EMOJI.lean },
-    it:       { name: 'IT професионалист', tagline: 'Пълен техноарсенал',        emoji: TRAVELER_EMOJI.it },
-    prepared: { name: 'Подготвен',         tagline: 'Готов за всичко',           emoji: TRAVELER_EMOJI.prepared },
-  },
-  travelTypes: {
-    city:     { name: 'Градско',     emoji: TRAVEL_TYPE_EMOJI.city },
-    summer:   { name: 'Плаж / лято', emoji: TRAVEL_TYPE_EMOJI.summer },
-    ski:      { name: 'Ски / сняг',  emoji: TRAVEL_TYPE_EMOJI.ski },
-    hiking:   { name: 'Туризъм',     emoji: TRAVEL_TYPE_EMOJI.hiking },
-    business: { name: 'Бизнес',      emoji: TRAVEL_TYPE_EMOJI.business },
-  },
-  items: {
-    passport: 'Паспорт', wallet: 'Портфейл', 'id-card': 'Лична карта',
-    'cash-cards': 'Пари и карти', insurance: 'Застрахователни документи',
-    phone: 'Телефон', charger: 'Зарядно за телефон', 'power-adapter': 'Захранващ адаптер',
-    headphones: 'Слушалки', laptop: 'Лаптоп', 'laptop-charger': 'Зарядно за лаптоп',
-    camera: 'Фотоапарат',
-    tshirts: 'Тениски', underwear: 'Бельо', socks: 'Чорапи',
-    pants: 'Панталони / дънки', pajamas: 'Пижама', swimwear: 'Бански',
-    sweater: 'Пуловер / суичър', jacket: 'Топло яке', 'rain-jacket': 'Дъждобран',
-    sneakers: 'Маратонки', sandals: 'Сандали / джапанки', 'dress-shoes': 'Официални обувки',
-    toothbrush: 'Четка за зъби', toothpaste: 'Паста за зъби',
-    soap: 'Сапун / душ-гел', shampoo: 'Шампоан и балсам',
-    deodorant: 'Дезодорант', sunscreen: 'Слънцезащитен крем', chapstick: 'Балсам за устни',
-    shaving: 'Комплект за бръснене', makeup: 'Грим и хигиена',
-    medications: 'Лекарства', 'first-aid': 'Аптечка',
-    'travel-pillow': 'Възглавница за път', 'sleep-mask': 'Маска за очи и тапи',
-    'water-bottle': 'Бутилка за вода', book: 'Книга / е-четец',
-    sunglasses: 'Слънчеви очила', 'day-backpack': 'Сгъваема раница',
-    umbrella: 'Компактен чадър',
-    'ski-gloves': 'Ски ръкавици', 'ski-goggles': 'Ски очила', beanie: 'Шапка',
-    'hiking-boots': 'Туристически обувки', 'beach-towel': 'Плажна кърпа', necktie: 'Вратовръзка',
-    'power-bank': 'Външна батерия', shorts: 'Къси панталони',
-    'dress-shirt': 'Риза / блуза', blazer: 'Сако',
-    'hand-sanitizer': 'Дезинфектант за ръце', 'period-care': 'Дамски продукти',
-    'insect-repellent': 'Репелент против насекоми',
-  },
-  pack: {
-    label: 'Прогрес на стягането',
-    progress: (n, total) => `${n} / ${total} събрани`,
-    allPacked: 'Всичко е събрано — готови сте!',
-    clear: 'Изчисти отметките',
-    checkAria: (name) => `Отбележи „${name}“ като събрано`,
-  },
-  share: { button: 'Сподели', copied: 'Връзката е копирана!' },
-  print: 'Печат / PDF',
-  footer: 'PackMate · стягай леко, пътувай далече.',
-  language: 'Език',
-}
-
-const T_HE: Translations = {
-  tagline: 'אריזה חכמה לכל טיול',
-  subtitle: 'מבוסס על חישוב, לא על תחושה. מגדירים את הטיול והרשימה מסתדרת לבד.',
-  kpi: { items: 'פריטים', weight: 'משקל', volume: 'נפח' },
-  units: { kg: 'ק"ג', l: 'ל׳' },
-  controls: {
-    tripLength: 'משך הטיול',
-    day: 'יום',
-    days: 'ימים',
-    traveler: 'פרופיל מטייל',
-    travelerHint: 'מכוונן את החיוניים',
-    gender: 'מגדר',
-    genderHint: 'מציג את הערכה המתאימה',
-    male: 'גבר',
-    female: 'אישה',
-    travelType: 'סוג הטיול',
-    travelTypeHint: 'מעצב את רשימת הציוד',
-  },
-  list: {
-    title: 'רשימת אריזה',
-    breakdown: (n, c, d) => `${n} פריטים · ${c} קטגוריות · ${d} ימים`,
-    pieces: (n) => `${n} ${n === 1 ? 'יחידה' : 'יחידות'}`,
-    fixedItem: 'פריט קבוע',
-    suggested: 'מומלץ',
-    perDay: '/ יום',
-    essential: 'חיוני',
-    genderTag: { male: 'גבר', female: 'אישה' },
-  },
-  telemetry: { title: 'נתונים בזמן אמת', volume: 'נפח', weight: 'משקל' },
-  luggage: {
-    title: 'מזוודה מומלצת',
-    backpack: 'תיק גב',
-    carryOn: 'טרולי',
-    suitcase: 'מזוודה גדולה',
-    capacityUpTo: (n) => `עד ${n} ליטר`,
-    capacityBetween: (a, b) => `${a} – ${b} ליטר`,
-    capacityOver: (n) => `${n} ליטר ומעלה`,
-    barBackpack: 'תיק גב',
-    barCarryOn: 'טרולי',
-    barSuitcase: 'מזוודה',
-    tier: (n) => `רמה ${n}/3`,
-  },
-  snapshots: {
-    title: 'טיולים שמורים',
-    placeholder: 'שם לטיול (למשל: סופ״ש בסופיה)',
-    save: 'שמירה',
-    empty: 'אין עדיין טיולים שמורים. שמרו את ההגדרה הנוכחית כדי להשוות בהמשך.',
-    load: 'טעינה',
-    delete: 'מחיקה',
-    autoSaved: 'נשמר אוטומטית',
-    confirmDelete: 'למחוק את הטיול השמור?',
-  },
-  warnings: {
-    overweight: (kg) => `המשקל הכולל הוא ${kg} ק"ג — מעל מכסת 20 ק"ג הרגילה של חברות התעופה.`,
-    overvolume: (l) => `הנפח הכולל הוא ${l} ליטר — מעבר לגודל של מזוודת יד, כדאי לצמצם.`,
-    overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — יותר מפי שניים מ-${sugg} המומלצים.`,
-    fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — הרבה מדי לפריט יחיד.`,
-    essential0: (emoji, name) => `${emoji} ${name} על 0 — אי אפשר בלי זה!`,
-    lowScaling: (emoji, name, qty, days, sugg) => `${emoji} ${name}: רק ${qty} ל-${days} ימים (מומלץ ${sugg}) — לא יספיק.`,
-  },
-  categories: {
-    documents: 'מסמכים וכסף',
-    electronics: 'אלקטרוניקה',
-    clothing: 'ביגוד',
-    outerwear: 'ביגוד עליון',
-    footwear: 'הנעלה',
-    toiletries: 'כלי רחצה',
-    health: 'בריאות ונוחות',
-    extras: 'עוד לדרך',
-    specialty: 'ציוד מיוחד',
-  },
-  travelers: {
-    lean:     { name: 'מינימלי',   tagline: 'רק ההכרחי, קליל ומהיר', emoji: TRAVELER_EMOJI.lean },
-    it:       { name: 'איש הייטק', tagline: 'ערכת טכנולוגיה מלאה',    emoji: TRAVELER_EMOJI.it },
-    prepared: { name: 'מוכן לכול', tagline: 'ערוך לכל תרחיש',         emoji: TRAVELER_EMOJI.prepared },
-  },
-  travelTypes: {
-    city:     { name: 'עירוני',    emoji: TRAVEL_TYPE_EMOJI.city },
-    summer:   { name: 'ים / קיץ',  emoji: TRAVEL_TYPE_EMOJI.summer },
-    ski:      { name: 'סקי / שלג', emoji: TRAVEL_TYPE_EMOJI.ski },
-    hiking:   { name: 'טרקים',     emoji: TRAVEL_TYPE_EMOJI.hiking },
-    business: { name: 'עסקים',     emoji: TRAVEL_TYPE_EMOJI.business },
-  },
-  items: {
-    passport: 'דרכון', wallet: 'ארנק', 'id-card': 'תעודת זהות',
-    'cash-cards': 'מזומן וכרטיסים', insurance: 'מסמכי ביטוח נסיעות',
-    phone: 'טלפון', charger: 'מטען לטלפון', 'power-adapter': 'מתאם חשמל',
-    headphones: 'אוזניות', laptop: 'מחשב נייד', 'laptop-charger': 'מטען למחשב נייד',
-    camera: 'מצלמה',
-    tshirts: 'חולצות טי', underwear: 'הלבשה תחתונה', socks: 'גרביים',
-    pants: 'מכנסיים / ג׳ינס', pajamas: 'פיג׳מה', swimwear: 'בגד ים',
-    sweater: 'סוודר / קפוצ׳ון', jacket: 'מעיל חם', 'rain-jacket': 'מעיל גשם',
-    sneakers: 'נעלי ספורט', sandals: 'סנדלים / כפכפים', 'dress-shoes': 'נעליים אלגנטיות',
-    toothbrush: 'מברשת שיניים', toothpaste: 'משחת שיניים',
-    soap: 'סבון / ג׳ל רחצה', shampoo: 'שמפו ומרכך',
-    deodorant: 'דאודורנט', sunscreen: 'קרם הגנה', chapstick: 'שפתון לחות',
-    shaving: 'ערכת גילוח', makeup: 'איפור והיגיינה',
-    medications: 'תרופות', 'first-aid': 'ערכת עזרה ראשונה',
-    'travel-pillow': 'כרית צוואר', 'sleep-mask': 'מסכת שינה ואטמי אוזניים',
-    'water-bottle': 'בקבוק מים רב-פעמי', book: 'ספר / קורא אלקטרוני',
-    sunglasses: 'משקפי שמש', 'day-backpack': 'תרמיל יום מתקפל',
-    umbrella: 'מטרייה קומפקטית',
-    'ski-gloves': 'כפפות סקי', 'ski-goggles': 'משקפי סקי', beanie: 'כובע צמר',
-    'hiking-boots': 'נעלי הליכה', 'beach-towel': 'מגבת חוף', necktie: 'עניבה',
-    'power-bank': 'סוללת גיבוי', shorts: 'מכנסיים קצרים',
-    'dress-shirt': 'חולצה מכופתרת', blazer: 'בלייזר / ז׳קט',
-    'hand-sanitizer': 'ג׳ל חיטוי לידיים', 'period-care': 'מוצרי היגיינה נשית',
-    'insect-repellent': 'דוחה יתושים',
-  },
-  pack: {
-    label: 'התקדמות האריזה',
-    progress: (n, total) => `${n} / ${total} ארוזים`,
-    allPacked: 'הכול ארוז — אפשר לצאת לדרך!',
-    clear: 'ניקוי הסימונים',
-    checkAria: (name) => `סימון ${name} כארוז`,
-  },
-  share: { button: 'שיתוף הטיול', copied: 'הקישור הועתק!' },
-  print: 'הדפסה / PDF',
-  footer: 'PackMate · לארוז קל, להגיע רחוק.',
-  language: 'שפה',
-}
-
-const TRANSLATIONS: Record<Lang, Translations> = { en: T_EN, ru: T_RU, bg: T_BG, he: T_HE }
-
-/* ============================================================ LANG DETECTION ============================================================ */
-
-const RUSSIAN_COUNTRIES = new Set(['ru', 'by', 'kz', 'kg', 'tj', 'tm', 'uz', 'az', 'am', 'ge', 'md', 'ua', 'ee', 'lv', 'lt'])
-const BG_TIMEZONES = new Set(['Europe/Sofia', 'Europe/Skopje'])
-const HE_TIMEZONES = new Set(['Asia/Jerusalem', 'Asia/Tel_Aviv'])
-const RU_TIMEZONES = new Set([
-  // Russia
-  'Europe/Moscow', 'Europe/Kaliningrad', 'Europe/Samara', 'Europe/Volgograd',
-  'Europe/Astrakhan', 'Europe/Saratov', 'Europe/Ulyanovsk', 'Europe/Kirov',
-  'Asia/Yekaterinburg', 'Asia/Omsk', 'Asia/Novosibirsk', 'Asia/Novokuznetsk',
-  'Asia/Krasnoyarsk', 'Asia/Irkutsk', 'Asia/Chita', 'Asia/Yakutsk',
-  'Asia/Vladivostok', 'Asia/Khandyga', 'Asia/Sakhalin', 'Asia/Ust-Nera',
-  'Asia/Magadan', 'Asia/Srednekolymsk', 'Asia/Kamchatka', 'Asia/Anadyr',
-  'Asia/Tomsk', 'Asia/Barnaul',
-  // Other former-USSR (per user spec)
-  'Europe/Minsk',
-  'Europe/Kyiv', 'Europe/Uzhgorod', 'Europe/Zaporozhye', 'Europe/Simferopol',
-  'Europe/Chisinau',
-  'Europe/Tallinn', 'Europe/Riga', 'Europe/Vilnius',
-  'Asia/Almaty', 'Asia/Aqtobe', 'Asia/Aqtau', 'Asia/Atyrau', 'Asia/Oral', 'Asia/Qostanay', 'Asia/Qyzylorda',
-  'Asia/Bishkek', 'Asia/Dushanbe', 'Asia/Ashgabat',
-  'Asia/Tashkent', 'Asia/Samarkand',
-  'Asia/Baku', 'Asia/Yerevan', 'Asia/Tbilisi',
-])
-
-function guessLanguage(): Lang {
-  if (typeof window === 'undefined') return 'en'
+/** Keep the address bar on the chosen language's entry page (/, /he/, /ru/, /bg/). */
+function syncLangPath(l: Lang) {
   try {
-    const stored = localStorage.getItem('packmate.lang')
-    if (stored === 'en' || stored === 'ru' || stored === 'bg' || stored === 'he') return stored
+    const { pathname, search, hash } = window.location
+    const onEntryPage = pathname === '/' || pathname === '/index.html' || langFromPath(pathname) !== null
+    if (onEntryPage && pathname !== LANG_PATH[l]) window.history.replaceState(null, '', LANG_PATH[l] + search + hash)
   } catch { /* ignore */ }
-
-  const langs =
-    typeof navigator !== 'undefined' && navigator.languages && navigator.languages.length > 0
-      ? navigator.languages
-      : [typeof navigator !== 'undefined' ? navigator.language || 'en' : 'en']
-
-  for (const lang of langs) {
-    const tag = lang.toLowerCase()
-    // 'he' is the modern code, 'iw' the legacy one some browsers still emit.
-    if (tag.startsWith('he') || tag.startsWith('iw')) return 'he'
-    if (tag.startsWith('bg') || tag.startsWith('mk')) return 'bg'
-    if (tag.startsWith('ru')) return 'ru'
-    const country = tag.split('-')[1]
-    if (country === 'il') return 'he'
-    if (country === 'bg' || country === 'mk') return 'bg'
-    if (country && RUSSIAN_COUNTRIES.has(country)) return 'ru'
-  }
-
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    if (HE_TIMEZONES.has(tz)) return 'he'
-    if (BG_TIMEZONES.has(tz)) return 'bg'
-    if (RU_TIMEZONES.has(tz)) return 'ru'
-  } catch { /* ignore */ }
-
-  return 'en'
 }
 
 /* ============================================================ PERSISTENCE ============================================================ */
 
-const STATE_KEY = 'packmate.state.v2'
 const SNAPSHOTS_KEY = 'packmate.snapshots.v2'
-const LANG_KEY = 'packmate.lang'
 
-const DEFAULT_STATE: AppState = {
-  days: 7,
-  gender: 'male',
-  travelerType: 'prepared',
-  travelType: 'city',
-  overrides: {},
-}
-
-function loadState(): AppState {
-  if (typeof window === 'undefined') return DEFAULT_STATE
+function loadState(): TripState {
+  if (typeof window === 'undefined') return DEFAULT_TRIP
   try {
     const raw = localStorage.getItem(STATE_KEY)
-    if (!raw) return DEFAULT_STATE
-    const parsed = JSON.parse(raw)
-    return {
-      days: clamp(parsed?.days ?? 7, 1, 21),
-      gender: parsed?.gender === 'female' ? 'female' : 'male',
-      travelerType: ['lean', 'it', 'prepared'].includes(parsed?.travelerType) ? parsed.travelerType : 'prepared',
-      travelType: ['city', 'summer', 'ski', 'hiking', 'business'].includes(parsed?.travelType) ? parsed.travelType : 'city',
-      overrides: (parsed?.overrides && typeof parsed.overrides === 'object') ? parsed.overrides : {},
-    }
+    if (!raw) return DEFAULT_TRIP
+    return normalizeTrip(JSON.parse(raw))
   } catch {
-    return DEFAULT_STATE
+    return DEFAULT_TRIP
   }
 }
 
-function saveStateToStorage(state: AppState) {
+function saveStateToStorage(state: TripState) {
   try {
     localStorage.setItem(STATE_KEY, JSON.stringify(state))
   } catch { /* quota or disabled */ }
@@ -918,7 +150,11 @@ function loadSnapshots(): Snapshot[] {
     const raw = localStorage.getItem(SNAPSHOTS_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    if (!Array.isArray(parsed)) return []
+    // Older snapshots predate the bag limit / worn fields: normalize them.
+    return parsed
+      .filter((x) => x && typeof x === 'object' && typeof x.id === 'string')
+      .map((x) => ({ id: x.id, name: String(x.name ?? ''), savedAt: Number(x.savedAt) || 0, state: normalizeTrip(x.state) }))
   } catch {
     return []
   }
@@ -928,10 +164,6 @@ function saveSnapshotsToStorage(snaps: Snapshot[]) {
   try {
     localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snaps))
   } catch { /* ignore */ }
-}
-
-function clamp(v: number, lo: number, hi: number) {
-  return Math.max(lo, Math.min(hi, v))
 }
 
 function uid(): string {
@@ -947,8 +179,6 @@ function now(): number {
 }
 
 /* -------------------- packing progress (check-off) -------------------- */
-
-const PACKED_KEY = 'packmate.packed.v1'
 
 function loadPacked(): Record<string, boolean> {
   if (typeof window === 'undefined') return {}
@@ -970,53 +200,17 @@ function savePackedToStorage(packed: Record<string, boolean>) {
 
 /* -------------------- shareable trip links -------------------- */
 
-// Compact, URL-safe base64 encoding of a trip so it can travel in a query
-// string and reproduce the exact setup on any device. Keys kept short.
-function encodeTrip(state: AppState, lang: Lang): string {
-  const payload = {
-    v: 2, l: lang,
-    d: state.days, g: state.gender,
-    r: state.travelerType, t: state.travelType,
-    o: state.overrides,
-  }
-  const bytes = new TextEncoder().encode(JSON.stringify(payload))
-  let bin = ''
-  bytes.forEach((b) => { bin += String.fromCharCode(b) })
-  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
-
-function decodeTrip(param: string): { state: AppState; lang?: Lang } | null {
+// Read a shared trip (?t=...) once at startup. Before it replaces the working
+// trip, the visitor's own trip, checks and saved language are kept as a
+// restore point (see share.ts). Then the param is stripped so ordinary
+// editing + local persistence resume.
+function readUrlBoot(): ReturnType<typeof bootFromSearch> {
+  const none = { shared: null, restore: null, resetPacked: false }
+  if (typeof window === 'undefined') return none
   try {
-    const b64 = param.replace(/-/g, '+').replace(/_/g, '/')
-    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
-    const p = JSON.parse(new TextDecoder().decode(bytes))
-    const lang: Lang | undefined =
-      p?.l === 'en' || p?.l === 'ru' || p?.l === 'bg' || p?.l === 'he' ? p.l : undefined
-    return {
-      state: {
-        days: clamp(Number(p?.d) || 7, 1, 21),
-        gender: p?.g === 'female' ? 'female' : 'male',
-        travelerType: ['lean', 'it', 'prepared'].includes(p?.r) ? p.r : 'prepared',
-        travelType: ['city', 'summer', 'ski', 'hiking', 'business'].includes(p?.t) ? p.t : 'city',
-        overrides: p?.o && typeof p.o === 'object' ? p.o : {},
-      },
-      lang,
-    }
-  } catch {
-    return null
-  }
-}
-
-// Read a shared trip from the URL (?t=...) once at startup, then strip the
-// param so ordinary editing + local persistence resume afterwards.
-function readUrlBoot(): { state: AppState; lang?: Lang } | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const params = new URLSearchParams(window.location.search)
-    const raw = params.get('t')
-    if (!raw) return null
-    const decoded = decodeTrip(raw)
-    if (decoded) {
+    const boot = bootFromSearch(localStorage, window.location.search, readSavedLang(), Date.now())
+    if (boot.shared) {
+      const params = new URLSearchParams(window.location.search)
       params.delete('t')
       const qs = params.toString()
       window.history.replaceState(
@@ -1024,9 +218,9 @@ function readUrlBoot(): { state: AppState; lang?: Lang } | null {
         window.location.pathname + (qs ? `?${qs}` : '') + window.location.hash,
       )
     }
-    return decoded
+    return boot
   } catch {
-    return null
+    return none
   }
 }
 
@@ -1052,39 +246,70 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
+const BOOT_LANG = bootLanguage()
 const URL_BOOT = readUrlBoot()
-const BOOT_STATE: AppState = URL_BOOT?.state ?? loadState()
+const BOOT_STATE: TripState = URL_BOOT.shared?.state ?? loadState()
+const BOOT_PACKED: Record<string, boolean> = URL_BOOT.resetPacked ? {} : loadPacked()
+
+// Cookie-free counts (see analytics.ts). Run once per page load, outside React
+// so StrictMode's double effects can't double-count.
+if (typeof window !== 'undefined') {
+  if (URL_BOOT.shared) track('shared_open')
+  try { noteVisit(localStorage, new Date()) } catch { /* storage disabled */ }
+}
 
 /* ============================================================ COMPONENT ============================================================ */
 
 function App() {
-  const [lang, setLang] = useState<Lang>(() => URL_BOOT?.lang ?? guessLanguage())
+  const [lang, setLang] = useState<Lang>(() => BOOT_LANG.lang)
+  const [langSource, setLangSource] = useState<LangSource>(() => BOOT_LANG.source)
   const [days, setDays] = useState<number>(() => BOOT_STATE.days)
   const [gender, setGender] = useState<Gender>(() => BOOT_STATE.gender)
   const [travelerType, setTravelerType] = useState<TravelerType>(() => BOOT_STATE.travelerType)
   const [travelType, setTravelType] = useState<TravelType>(() => BOOT_STATE.travelType)
   const [overrides, setOverrides] = useState<Record<string, number>>(() => BOOT_STATE.overrides)
+  const [limitKg, setLimitKg] = useState<BagLimit>(() => BOOT_STATE.limitKg)
+  const [worn, setWorn] = useState<string[]>(() => BOOT_STATE.worn)
+  const [laundryDays, setLaundryDays] = useState<LaundryDays>(() => BOOT_STATE.laundryDays)
   const [snapshots, setSnapshots] = useState<Snapshot[]>(() => loadSnapshots())
   const [snapshotName, setSnapshotName] = useState('')
-  const [packed, setPacked] = useState<Record<string, boolean>>(() => loadPacked())
+  const [packed, setPacked] = useState<Record<string, boolean>>(() => BOOT_PACKED)
+  const [restorePoint, setRestorePoint] = useState<RestorePoint | null>(() => URL_BOOT.restore)
   const [shareStatus, setShareStatus] = useState<'idle' | 'copied'>('idle')
 
   const t = TRANSLATIONS[lang]
 
+  const trip: TripState = useMemo(
+    () => ({ days, gender, travelerType, travelType, overrides, limitKg, worn, laundryDays }),
+    [days, gender, travelerType, travelType, overrides, limitKg, worn, laundryDays],
+  )
+
   // Persist UI state continuously.
   useEffect(() => {
-    saveStateToStorage({ days, gender, travelerType, travelType, overrides })
-  }, [days, gender, travelerType, travelType, overrides])
+    saveStateToStorage(trip)
+  }, [trip])
 
   // Persist packing progress (kept separate from trip config + snapshots).
   useEffect(() => {
     savePackedToStorage(packed)
   }, [packed])
 
+  // Only an explicit pick from the language switch is remembered.
+  const chooseLang = (l: Lang) => {
+    if (l !== lang) track('language_change')
+    setLang(l)
+    setLangSource('saved')
+    try { localStorage.setItem(LANG_CHOICE_KEY, l) } catch { /* ignore */ }
+    syncLangPath(l)
+  }
+
   useEffect(() => {
-    try { localStorage.setItem(LANG_KEY, lang) } catch { /* ignore */ }
     document.documentElement.lang = lang
     document.documentElement.dir = dirOf(lang)
+    // The static description under the app (index.html) is in the page's
+    // language; hide it when the UI is showing a different one.
+    const about = document.getElementById('pm-about')
+    if (about) about.hidden = about.lang !== lang
   }, [lang])
 
   const activeItems = useMemo(
@@ -1092,11 +317,8 @@ function App() {
     [gender, travelerType, travelType],
   )
 
-  const defaultQty = (item: ResolvedItem) =>
-    item.fixed ? 1 : Math.max(1, Math.ceil(item.basePerDay * days))
-
-  const getQty = (item: ResolvedItem) =>
-    overrides[item.id] ?? defaultQty(item)
+  const defaultQty = (item: ResolvedItem) => suggestedQty(item, trip)
+  const getQty = (item: ResolvedItem) => listQty(item, trip)
 
   const setQty = (item: ResolvedItem, qty: number) =>
     setOverrides((prev) => ({ ...prev, [item.id]: Math.max(0, qty) }))
@@ -1108,27 +330,26 @@ function App() {
       return next
     })
 
-  const { totalWeight, totalVolume, totalItems } = useMemo(() => {
-    let w = 0, v = 0, n = 0
-    for (const it of activeItems) {
-      const q = getQty(it)
-      w += q * it.weightKg
-      v += q * it.volumeL
-      n += q
-    }
-    return { totalWeight: w, totalVolume: v, totalItems: n }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days])
+  const toggleWorn = (id: string) =>
+    setWorn((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id].sort()))
 
-  const luggage: Luggage = useMemo(() => {
-    if (totalVolume <= 25) return { nameKey: 'backpack', emoji: '🎒', tier: 1 }
-    if (totalVolume <= 45) return { nameKey: 'carryOn',  emoji: '🧳', tier: 2 }
-    return                     { nameKey: 'suitcase', emoji: '🧰', tier: 3 }
-  }, [totalVolume])
+  // Totals are for the bag: anything worn on the travel day is left out.
+  const totals = useMemo(() => computeTotals(activeItems, trip), [activeItems, trip])
+  const { weightKg: totalWeight, volumeL: totalVolume, count: totalItems } = totals
+
+  // The verdict must pass BOTH weight (against the chosen limit) and volume.
+  const verdict = useMemo(
+    () => chooseLuggage(totalWeight, totalVolume, limitKg),
+    [totalWeight, totalVolume, limitKg],
+  )
+  const luggageEmoji = LUGGAGE_EMOJI[verdict.nameKey]
+  const cabinLimit = isCabinLimit(limitKg)
+  const cabinCapKg = Math.min(limitKg, CABIN_MAX_KG)
 
   const warnings: Warning[] = useMemo(() => {
     const w: Warning[] = []
-    if (totalWeight > 20) w.push({ type: 'over', msg: t.warnings.overweight(totalWeight.toFixed(1)) })
+    if (verdict.overLimit)
+      w.push({ type: 'over', msg: t.warnings.overLimit(totalWeight.toFixed(1), limitKg, verdict.overByKg.toFixed(1)) })
     if (totalVolume > 60) w.push({ type: 'over', msg: t.warnings.overvolume(totalVolume.toFixed(1)) })
     for (const it of activeItems) {
       const def = defaultQty(it)
@@ -1142,28 +363,30 @@ function App() {
     }
     return w
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days, totalWeight, totalVolume, lang])
+  }, [activeItems, trip, totalWeight, totalVolume, verdict, lang])
 
   const volumePct = Math.min(100, (totalVolume / 70) * 100)
-  const weightPct = Math.min(100, (totalWeight / 25) * 100)
+  // Scale the weight gauge so the chosen limit sits at 80% of the track.
+  const weightScale = limitKg * 1.25
+  const weightPct = Math.min(100, (totalWeight / weightScale) * 100)
 
   const usedCategoriesCount = useMemo(
     () => CATEGORY_ORDER.filter((c) => activeItems.some((i) => i.category === c)).length,
     [activeItems],
   )
 
-  // Packing progress counts only items you are actually bringing (qty > 0).
+  // Packing progress counts only units that actually go in the bag: an item
+  // you wear (and have no spare of) is not "packable" and never counts as packed.
   const { packedCount, packableCount } = useMemo(() => {
     let packableCount = 0
     let packedCount = 0
     for (const it of activeItems) {
-      if (getQty(it) <= 0) continue
+      if (bagQty(it, trip) <= 0) continue
       packableCount++
       if (packed[it.id]) packedCount++
     }
     return { packedCount, packableCount }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeItems, overrides, days, packed])
+  }, [activeItems, trip, packed])
 
   const packPct = packableCount ? (packedCount / packableCount) * 100 : 0
 
@@ -1202,22 +425,33 @@ function App() {
     rangeGesture.current = null
   }
 
-  const togglePacked = (id: string) =>
-    setPacked((prev) => ({ ...prev, [id]: !prev[id] }))
+  const togglePacked = (id: string) => {
+    const next = { ...packed, [id]: !packed[id] }
+    setPacked(next)
+    if (next[id]) {
+      const checked = activeItems.filter((it) => next[it.id] && bagQty(it, trip) > 0).length
+      if (checked >= 1) trackOncePerPage('first_check')
+      if (checked >= 5) trackOncePerPage('five_checks')
+    }
+  }
 
   const clearPacked = () => setPacked({})
 
   async function shareTrip() {
-    const url =
-      `${window.location.origin}${window.location.pathname}` +
-      `?t=${encodeTrip({ days, gender, travelerType, travelType, overrides }, lang)}`
+    // The link opens the sender's language entry page; a recipient's own saved
+    // language still wins (see lang.ts).
+    const url = `${window.location.origin}${LANG_PATH[lang]}?t=${encodeTrip(trip)}`
     if (await copyText(url)) {
+      track('share')
       setShareStatus('copied')
       window.setTimeout(() => setShareStatus('idle'), 2000)
     }
   }
 
-  const printList = () => window.print()
+  const printList = () => {
+    track('print')
+    window.print()
+  }
 
   /* -------------------- snapshot handlers -------------------- */
 
@@ -1227,12 +461,13 @@ function App() {
       id: uid(),
       name,
       savedAt: now(),
-      state: { days, gender, travelerType, travelType, overrides },
+      state: trip,
     }
     const next = [snap, ...snapshots].slice(0, 20)
     setSnapshots(next)
     saveSnapshotsToStorage(next)
     setSnapshotName('')
+    track('save')
   }
 
   function autoSnapshotName(): string {
@@ -1241,12 +476,39 @@ function App() {
     return `${tt} · ${tr} · ${days}${DAY_SUFFIX[lang]}`
   }
 
+  function applyTrip(s: TripState) {
+    setDays(s.days)
+    setGender(s.gender)
+    setTravelerType(s.travelerType)
+    setTravelType(s.travelType)
+    setOverrides(s.overrides)
+    setLimitKg(s.limitKg)
+    setWorn(s.worn)
+    setLaundryDays(s.laundryDays)
+  }
+
   function loadSnapshot(snap: Snapshot) {
-    setDays(snap.state.days)
-    setGender(snap.state.gender)
-    setTravelerType(snap.state.travelerType)
-    setTravelType(snap.state.travelType)
-    setOverrides(snap.state.overrides)
+    applyTrip(snap.state)
+    track('load')
+  }
+
+  /* -------------------- shared-link restore -------------------- */
+
+  function restoreOwnTrip() {
+    if (!restorePoint) return
+    applyTrip(restorePoint.state)
+    setPacked(restorePoint.packed)
+    if (restorePoint.lang) {
+      setLang(restorePoint.lang)
+      setLangSource('saved')
+    }
+    clearRestorePoint(localStorage)
+    setRestorePoint(null)
+  }
+
+  function keepSharedTrip() {
+    clearRestorePoint(localStorage)
+    setRestorePoint(null)
   }
 
   function deleteSnapshot(id: string) {
@@ -1285,14 +547,40 @@ function App() {
           </div>
 
           <div className="pm-hero-right">
-            <LanguagePicker lang={lang} onChange={setLang} label={t.language} />
+            <LanguagePicker
+              lang={lang}
+              onChange={chooseLang}
+              label={t.language}
+              fallbackNote={langSource === 'fallback'}
+            />
             <div className="pm-kpis">
               <Kpi label={t.kpi.items}  value={String(totalItems)} accent />
-              <Kpi label={t.kpi.weight} value={`${totalWeight.toFixed(2)} ${t.units.kg}`} />
+              <Kpi
+                label={t.kpi.weight}
+                value={`${totalWeight.toFixed(2)} ${t.units.kg}`}
+                note={totals.wornCount > 0 ? t.kpi.worn(totals.wornWeightKg.toFixed(2)) : undefined}
+              />
               <Kpi label={t.kpi.volume} value={`${totalVolume.toFixed(2)} ${t.units.l}`} />
             </div>
           </div>
         </header>
+
+        {restorePoint && (
+          <section className="pm-restore" aria-live="polite">
+            <span className="pm-alert-icon" aria-hidden>🔗</span>
+            <span className="pm-restore-text">
+              <b>{t.share.openedTitle}</b> {t.share.openedBody}
+            </span>
+            <span className="pm-restore-actions">
+              <button type="button" className="pm-btn pm-btn-sm pm-btn-primary" onClick={restoreOwnTrip}>
+                ↩ {t.share.restore}
+              </button>
+              <button type="button" className="pm-btn pm-btn-sm" onClick={keepSharedTrip}>
+                {t.share.keep}
+              </button>
+            </span>
+          </section>
+        )}
 
         {warnings.length > 0 && (
           <section className="pm-warnings" aria-live="polite">
@@ -1421,6 +709,53 @@ function App() {
               })}
             </div>
           </div>
+
+          <div className="pm-control pm-control-span-2">
+            <div className="pm-control-head">
+              <span className="pm-label" id="pm-laundry-label">{t.controls.laundry}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.laundryHint}</span>
+            </div>
+            <div className="pm-chips" role="group" aria-labelledby="pm-laundry-label">
+              {LAUNDRY_OPTIONS.map((n) => {
+                const active = laundryDays === n
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setLaundryDays(n)}
+                    className={`pm-chip ${active ? 'pm-chip-active' : ''}`}
+                    aria-pressed={active}
+                  >
+                    <span aria-hidden>🧺</span> {t.controls.laundryEvery(n)}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="pm-control pm-control-span-2">
+            <div className="pm-control-head">
+              <span className="pm-label" id="pm-limit-label">{t.controls.bagLimit}</span>
+              <span className="pm-pill pm-pill-muted">{t.controls.bagLimitHint}</span>
+            </div>
+            <div className="pm-chips" role="group" aria-labelledby="pm-limit-label">
+              {BAG_LIMITS.map((kg) => {
+                const active = limitKg === kg
+                return (
+                  <button
+                    key={kg}
+                    type="button"
+                    onClick={() => setLimitKg(kg)}
+                    className={`pm-chip ${active ? 'pm-chip-active' : ''}`}
+                    aria-pressed={active}
+                  >
+                    <span aria-hidden>{isCabinLimit(kg) ? '🧳' : '🧰'}</span>
+                    {' '}{isCabinLimit(kg) ? t.controls.cabin : t.controls.hold} {kg} {t.units.kg}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </section>
 
         <section className="pm-grid">
@@ -1484,8 +819,8 @@ function App() {
             {CATEGORY_ORDER.map((cat) => {
               const itemsInCat = activeItems.filter((it) => it.category === cat)
               if (itemsInCat.length === 0) return null
-              const catQty = itemsInCat.reduce((sum, it) => sum + getQty(it), 0)
-              const catWeight = itemsInCat.reduce((sum, it) => sum + getQty(it) * it.weightKg, 0)
+              const catQty = itemsInCat.reduce((sum, it) => sum + bagQty(it, trip), 0)
+              const catWeight = itemsInCat.reduce((sum, it) => sum + bagQty(it, trip) * it.weightKg, 0)
               return (
                 <div key={cat} className="pm-cat">
                   <div className="pm-cat-head">
@@ -1506,7 +841,12 @@ function App() {
                       const lowOnScaling =
                         !it.fixed && def >= 2 && qty > 0 && qty < Math.ceil(def / 2)
                       const itemName = t.items[it.id] ?? it.id
-                      const isPacked = !!packed[it.id]
+                      const wornN = wornQty(it, trip)
+                      const inBag = qty - wornN
+                      const isWorn = wornN > 0
+                      // Nothing left to pack once the only unit is worn.
+                      const allWorn = isWorn && inBag === 0
+                      const isPacked = !!packed[it.id] && !allWorn
                       const isZero = qty === 0
                       return (
                         <li
@@ -1514,6 +854,7 @@ function App() {
                           className={[
                             'pm-item',
                             isZero ? 'pm-item-zero' : '',
+                            allWorn ? 'pm-item-worn' : '',
                             !isZero && isPacked ? 'pm-item-packed' : '',
                             !isZero && (overPacked || fixedOverpacked) ? 'pm-item-warn' : '',
                             !isZero && lowOnScaling ? 'pm-item-low' : '',
@@ -1527,6 +868,10 @@ function App() {
                               aria-hidden
                             >
                               ✕
+                            </span>
+                          ) : allWorn ? (
+                            <span className="pm-check-worn" aria-hidden title={t.list.worn}>
+                              ✓
                             </span>
                           ) : (
                             <input
@@ -1563,13 +908,31 @@ function App() {
                                 </>
                               )}
                               <span className="pm-dot">•</span>
-                              {(qty * it.weightKg).toFixed(2)} {t.units.kg}
+                              {(inBag * it.weightKg).toFixed(2)} {t.units.kg}
                               <span className="pm-dot">•</span>
-                              {(qty * it.volumeL).toFixed(2)} {t.units.l}
+                              {(inBag * it.volumeL).toFixed(2)} {t.units.l}
+                              {isWorn && (
+                                <>
+                                  <span className="pm-dot">•</span>
+                                  <span className="pm-worn-note">{wornN} {t.list.wornNote}</span>
+                                </>
+                              )}
                             </div>
                           </div>
 
                           <div className="pm-qty">
+                            {it.wearable && qty > 0 && (
+                              <button
+                                type="button"
+                                className={`pm-btn pm-btn-sm pm-wear ${isWorn ? 'pm-wear-on' : ''}`}
+                                onClick={() => toggleWorn(it.id)}
+                                aria-pressed={isWorn}
+                                aria-label={t.list.wearAria(itemName)}
+                                title={t.list.wearAria(itemName)}
+                              >
+                                {isWorn ? `✓ ${t.list.worn}` : t.list.wear}
+                              </button>
+                            )}
                             <button
                               type="button"
                               className="pm-btn pm-btn-round"
@@ -1619,39 +982,51 @@ function App() {
                 pct={volumePct}
                 color="var(--pm-accent)"
                 ticks={[
-                  { at: (25 / 70) * 100, label: '25L' },
-                  { at: (45 / 70) * 100, label: '45L' },
+                  { at: (BACKPACK_MAX_L / 70) * 100, label: `${BACKPACK_MAX_L}L` },
+                  { at: (CARRY_ON_MAX_L / 70) * 100, label: `${CARRY_ON_MAX_L}L` },
                 ]}
               />
               <Gauge
                 label={t.telemetry.weight}
                 value={`${totalWeight.toFixed(2)} ${t.units.kg}`}
                 pct={weightPct}
-                color={totalWeight > 20 ? 'var(--pm-danger)' : 'var(--pm-success)'}
-                ticks={[{ at: (20 / 25) * 100, label: '20kg' }]}
+                color={verdict.overLimit ? 'var(--pm-danger)' : 'var(--pm-success)'}
+                ticks={[
+                  ...(!cabinLimit ? [{ at: (CABIN_MAX_KG / weightScale) * 100, label: `${CABIN_MAX_KG}kg` }] : []),
+                  { at: (limitKg / weightScale) * 100, label: `${limitKg}kg` },
+                ]}
               />
             </div>
 
-            <div className={`pm-card pm-luggage pm-luggage-${luggage.tier}`}>
+            <div className={`pm-card pm-luggage pm-luggage-${verdict.tier}`}>
               <div className="pm-luggage-head">
                 <span className="pm-muted pm-uppercase">{t.luggage.title}</span>
-                <span className="pm-pill pm-pill-muted">{t.luggage.tier(luggage.tier)}</span>
+                <span className="pm-pill pm-pill-muted">{t.luggage.tier(verdict.tier)}</span>
               </div>
               <div className="pm-luggage-body">
-                <div className="pm-luggage-emoji" aria-hidden>{luggage.emoji}</div>
+                <div className="pm-luggage-emoji" aria-hidden>{luggageEmoji}</div>
                 <div>
-                  <div className="pm-luggage-name">{t.luggage[luggage.nameKey]}</div>
+                  <div className="pm-luggage-name">{t.luggage[verdict.nameKey]}</div>
                   <div className="pm-muted">
-                    {luggage.tier === 1 && t.luggage.capacityUpTo(25)}
-                    {luggage.tier === 2 && t.luggage.capacityBetween(25, 45)}
-                    {luggage.tier === 3 && t.luggage.capacityOver(45)}
+                    {verdict.tier === 1 && t.luggage.capacityUpTo(BACKPACK_MAX_L)}
+                    {verdict.tier === 2 && t.luggage.capacityBetween(BACKPACK_MAX_L, CARRY_ON_MAX_L)}
+                    {verdict.tier === 3 && t.luggage.capacityOver(CARRY_ON_MAX_L)}
+                    {' · '}
+                    {cabinLimit ? t.controls.cabin : t.controls.hold} {limitKg} {t.units.kg}
                   </div>
+                  {verdict.cabinBlockedBy && (
+                    <div className={`pm-luggage-why ${verdict.overLimit ? 'pm-luggage-why-bad' : ''}`}>
+                      {verdict.cabinBlockedBy === 'weight' && t.luggage.blockedWeight(cabinCapKg)}
+                      {verdict.cabinBlockedBy === 'volume' && t.luggage.blockedVolume(CARRY_ON_MAX_L)}
+                      {verdict.cabinBlockedBy === 'both' && t.luggage.blockedBoth(cabinCapKg, CARRY_ON_MAX_L)}
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="pm-luggage-bar" aria-hidden>
-                <div className={`pm-luggage-seg ${luggage.tier >= 1 ? 'on' : ''}`}>{t.luggage.barBackpack}</div>
-                <div className={`pm-luggage-seg ${luggage.tier >= 2 ? 'on' : ''}`}>{t.luggage.barCarryOn}</div>
-                <div className={`pm-luggage-seg ${luggage.tier >= 3 ? 'on' : ''}`}>{t.luggage.barSuitcase}</div>
+                <div className={`pm-luggage-seg ${verdict.tier >= 1 ? 'on' : ''}`}>{t.luggage.barBackpack}</div>
+                <div className={`pm-luggage-seg ${verdict.tier >= 2 ? 'on' : ''}`}>{t.luggage.barCarryOn}</div>
+                <div className={`pm-luggage-seg ${verdict.tier >= 3 ? 'on' : ''}`}>{t.luggage.barSuitcase}</div>
               </div>
             </div>
 
@@ -1764,11 +1139,12 @@ function LogoMark({ size }: { size: number }) {
   )
 }
 
-function Kpi({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function Kpi({ label, value, note, accent = false }: { label: string; value: string; note?: string; accent?: boolean }) {
   return (
     <div className={`pm-kpi ${accent ? 'pm-kpi-accent' : ''}`}>
       <div className="pm-kpi-value">{value}</div>
       <div className="pm-kpi-label">{label}</div>
+      {note && <div className="pm-kpi-note">{note}</div>}
     </div>
   )
 }
@@ -1805,10 +1181,13 @@ function LanguagePicker({
   lang,
   onChange,
   label,
+  fallbackNote = false,
 }: {
   lang: Lang
   onChange: (l: Lang) => void
   label: string
+  /** None of the browser's languages is supported: say so, plainly, in English. */
+  fallbackNote?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -1843,6 +1222,14 @@ function LanguagePicker({
         <span className="pm-lang-name">{current.name}</span>
         <span className="pm-lang-caret" aria-hidden>▾</span>
       </button>
+      {fallbackNote && !open && (
+        <p className="pm-lang-note" lang="en" dir="ltr">
+          Language: English -{' '}
+          <button type="button" className="pm-lang-note-btn" onClick={() => setOpen(true)}>
+            change
+          </button>
+        </p>
+      )}
       {open && (
         <ul className="pm-lang-menu" role="listbox">
           {LANGS.map((l) => (
@@ -2054,6 +1441,11 @@ const packmateCss = `
   color: var(--pm-text); text-align: start;
 }
 .pm-lang-item:hover { background: var(--pm-accent-bg); }
+.pm-lang-note { margin: 6px 4px 0; font-size: 12px; color: var(--pm-muted); text-align: end; }
+.pm-lang-note-btn {
+  background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+  color: var(--pm-accent-strong); text-decoration: underline; text-underline-offset: 2px;
+}
 .pm-lang-item-active { background: var(--pm-accent-bg); color: var(--pm-accent-strong); font-weight: 600; }
 
 /* ========== warnings ========== */
@@ -2549,6 +1941,34 @@ const packmateCss = `
   color: var(--pm-danger);
   border-color: color-mix(in srgb, var(--pm-danger) 55%, transparent);
 }
+
+/* ========== shared-link restore ========== */
+.pm-restore {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border: 1px solid color-mix(in srgb, var(--pm-accent) 45%, transparent);
+  background: var(--pm-accent-bg);
+  border-radius: 14px; padding: 12px 16px; margin-bottom: 16px;
+  font-size: 14px;
+}
+.pm-restore-text { flex: 1; min-width: 200px; }
+.pm-restore-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+@media print { .pm-restore { display: none !important; } }
+
+/* ========== worn on the travel day ========== */
+.pm-kpi-note { font-size: 11px; color: var(--pm-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.pm-kpi-accent .pm-kpi-note { color: rgba(255,255,255,.85); }
+.pm-wear { white-space: nowrap; }
+.pm-wear-on { background: var(--pm-accent-bg); color: var(--pm-accent-strong); border-color: var(--pm-accent); }
+.pm-worn-note { color: var(--pm-accent-strong); font-weight: 600; }
+.pm-item-worn { opacity: .7; }
+.pm-check-worn {
+  width: 22px; height: 22px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 13px; font-weight: 800; line-height: 1;
+  color: var(--pm-accent-strong);
+  border: 1px dashed var(--pm-accent); border-radius: 6px;
+}
+.pm-luggage-why { font-size: 12.5px; color: var(--pm-text-soft); margin-top: 4px; }
+.pm-luggage-why-bad { color: var(--pm-danger); font-weight: 600; }
 
 /* ========== print ========== */
 .pm-print-head { display: none; }
