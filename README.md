@@ -84,7 +84,7 @@ PackMate counts page views and a handful of events with
   `index.html`. `count.js` takes the path from the page's canonical link.
 - **Events** (`src/analytics.ts`): `share`, `shared_open`, `save`, `load`,
   `first_check`, `five_checks`, `print`, `language_change`, `return_visit`,
-  sent as `goatcounter.count({ path: 'event/<name>', event: true })`. Event
+  sent as `goatcounter.count({ path: '<host>/event/<name>', event: true })`. Event
   names are fixed strings; nothing from your list goes into them. Because the
   path is given as a string, these event paths are not host-prefixed.
   `first_check` and `five_checks` fire at most once per page load.
