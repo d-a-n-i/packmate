@@ -242,6 +242,8 @@ const T_EN: Translations = {
     'dress-shirt': 'Dress Shirt / Blouse', blazer: 'Blazer / Sport Coat',
     'hand-sanitizer': 'Hand Sanitizer', 'period-care': 'Period Products',
     'insect-repellent': 'Insect Repellent',
+    'ski-pants': 'Ski Pants', 'thermal-layers': 'Thermal Base Layers', 'ski-socks': 'Ski Socks',
+    'neck-warmer': 'Neck Warmer', 'ski-helmet': 'Ski Helmet', 'ski-pass': 'Ski Pass',
   },
   pack: {
     label: 'Packing progress',
@@ -382,6 +384,8 @@ const T_RU: Translations = {
     'dress-shirt': 'Рубашка / блузка', blazer: 'Пиджак',
     'hand-sanitizer': 'Антисептик для рук', 'period-care': 'Средства гигиены',
     'insect-repellent': 'Средство от насекомых',
+    'ski-pants': 'Горнолыжные штаны', 'thermal-layers': 'Термобельё', 'ski-socks': 'Горнолыжные носки',
+    'neck-warmer': 'Бафф / утеплитель шеи', 'ski-helmet': 'Горнолыжный шлем', 'ski-pass': 'Ски-пасс',
   },
   pack: {
     label: 'Прогресс сборов',
@@ -522,6 +526,8 @@ const T_BG: Translations = {
     'dress-shirt': 'Риза / блуза', blazer: 'Сако',
     'hand-sanitizer': 'Дезинфектант за ръце', 'period-care': 'Дамски продукти',
     'insect-repellent': 'Репелент против насекоми',
+    'ski-pants': 'Ски панталон', 'thermal-layers': 'Термобельо', 'ski-socks': 'Ски чорапи',
+    'neck-warmer': 'Шал-яка / бъф', 'ski-helmet': 'Ски каска', 'ski-pass': 'Лифт карта',
   },
   pack: {
     label: 'Прогрес на стягането',
@@ -662,6 +668,8 @@ const T_HE: Translations = {
     'dress-shirt': 'חולצה מכופתרת', blazer: 'בלייזר / ז׳קט',
     'hand-sanitizer': 'ג׳ל חיטוי לידיים', 'period-care': 'מוצרי היגיינה נשית',
     'insect-repellent': 'דוחה יתושים',
+    'ski-pants': 'מכנסי סקי', 'thermal-layers': 'ביגוד תרמי', 'ski-socks': 'גרבי סקי',
+    'neck-warmer': 'מחמם צוואר', 'ski-helmet': 'קסדת סקי', 'ski-pass': 'סקי פס',
   },
   pack: {
     label: 'התקדמות האריזה',

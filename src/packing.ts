@@ -159,6 +159,7 @@ export const ITEMS: PackItem[] = [
   { id: 'id-card',      emoji: '🪪', category: 'documents', basePerDay: 0, weightKg: 0.01, volumeL: 0.02, fixed: true, essential: true },
   { id: 'cash-cards',   emoji: '💳', category: 'documents', basePerDay: 0, weightKg: 0.03, volumeL: 0.05, fixed: true, essential: true },
   { id: 'insurance',    emoji: '📄', category: 'documents', basePerDay: 0, weightKg: 0.02, volumeL: 0.05, fixed: true },
+  { id: 'ski-pass',     emoji: '🎫', category: 'documents', basePerDay: 0, weightKg: 0.01, volumeL: 0.01, fixed: true, onlyTravelTypes: ['ski'] },
 
   // Electronics
   { id: 'phone',          emoji: '📱', category: 'electronics', basePerDay: 0, weightKg: 0.20, volumeL: 0.15, fixed: true, essential: true },
@@ -179,12 +180,16 @@ export const ITEMS: PackItem[] = [
   { id: 'dress-shirt', emoji: '👔', category: 'clothing', basePerDay: 0.50, weightKg: 0.25, volumeL: 0.80, fixed: false, onlyTravelTypes: ['city', 'business'], wearable: true },
   { id: 'pajamas',     emoji: '🛌', category: 'clothing', basePerDay: 0,    weightKg: 0.30, volumeL: 0.70, fixed: true },
   { id: 'swimwear',    emoji: '🩳', category: 'clothing', basePerDay: 0,    weightKg: 0.15, volumeL: 0.30, fixed: true },
+  // A base-layer set (top + leggings) re-worn about three days; ski socks every other day.
+  { id: 'thermal-layers', emoji: '🌡️', category: 'clothing', basePerDay: 0.34, weightKg: 0.30, volumeL: 0.80, fixed: false, onlyTravelTypes: ['ski'], wearable: true },
+  { id: 'ski-socks',      emoji: '🧦', category: 'clothing', basePerDay: 0.50, weightKg: 0.09, volumeL: 0.25, fixed: false, onlyTravelTypes: ['ski'], wearable: true },
 
   // Outerwear
   { id: 'sweater',     emoji: '🧶', category: 'outerwear', basePerDay: 0, weightKg: 0.50, volumeL: 1.80, fixed: true, wearable: true },
   { id: 'jacket',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.90, volumeL: 3.50, fixed: true, wearable: true },
   { id: 'rain-jacket', emoji: '☔', category: 'outerwear', basePerDay: 0, weightKg: 0.30, volumeL: 0.80, fixed: true, wearable: true },
   { id: 'blazer',      emoji: '🧥', category: 'outerwear', basePerDay: 0, weightKg: 0.70, volumeL: 3.00, fixed: true, onlyTravelTypes: ['business'], wearable: true },
+  { id: 'ski-pants',   emoji: '👖', category: 'outerwear', basePerDay: 0, weightKg: 0.80, volumeL: 3.00, fixed: true, onlyTravelTypes: ['ski'], wearable: true },
 
   // Footwear
   { id: 'sneakers',    emoji: '👟', category: 'footwear', basePerDay: 0, weightKg: 0.80, volumeL: 2.50, fixed: true, essential: true, wearable: true },
@@ -222,6 +227,9 @@ export const ITEMS: PackItem[] = [
   { id: 'ski-gloves',    emoji: '🧤', category: 'specialty', basePerDay: 0, weightKg: 0.20, volumeL: 0.60, fixed: true, onlyTravelTypes: ['ski'], wearable: true },
   { id: 'ski-goggles',   emoji: '🥽', category: 'specialty', basePerDay: 0, weightKg: 0.15, volumeL: 0.40, fixed: true, onlyTravelTypes: ['ski'] },
   { id: 'beanie',        emoji: '🎿', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['ski'], wearable: true },
+  { id: 'neck-warmer',   emoji: '🧣', category: 'specialty', basePerDay: 0, weightKg: 0.08, volumeL: 0.20, fixed: true, onlyTravelTypes: ['ski'], wearable: true },
+  // Bulky and often rented: listed (qty 1) but not essential, so it can go to 0.
+  { id: 'ski-helmet',    emoji: '🪖', category: 'specialty', basePerDay: 0, weightKg: 0.50, volumeL: 6.00, fixed: true, onlyTravelTypes: ['ski'], wearable: true },
   { id: 'hiking-boots',  emoji: '🥾', category: 'specialty', basePerDay: 0, weightKg: 1.10, volumeL: 3.00, fixed: true, onlyTravelTypes: ['hiking'], wearable: true },
   { id: 'beach-towel',   emoji: '🏖️', category: 'specialty', basePerDay: 0, weightKg: 0.40, volumeL: 1.40, fixed: true, onlyTravelTypes: ['summer'] },
   { id: 'necktie',       emoji: '👔', category: 'specialty', basePerDay: 0, weightKg: 0.10, volumeL: 0.30, fixed: true, onlyTravelTypes: ['business'], wearable: true },
@@ -240,7 +248,7 @@ const TRAVEL_HIDE: Record<TravelType, string[]> = {
 const TRAVEL_ESSENTIALS: Record<TravelType, string[]> = {
   city:     [],
   summer:   ['sunscreen', 'sunglasses', 'sandals', 'swimwear', 'beach-towel', 'shorts'],
-  ski:      ['jacket', 'sweater', 'ski-gloves', 'ski-goggles', 'beanie'],
+  ski:      ['jacket', 'sweater', 'ski-gloves', 'ski-goggles', 'beanie', 'ski-pants', 'thermal-layers', 'ski-socks'],
   hiking:   ['water-bottle', 'day-backpack', 'hiking-boots', 'sunscreen'],
   business: ['dress-shoes', 'dress-shirt', 'blazer', 'pants', 'laptop'],
 }
