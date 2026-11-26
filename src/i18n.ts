@@ -405,7 +405,7 @@ const T_RU: Translations = {
 }
 
 const T_BG: Translations = {
-  tagline: 'Умно стягане за всяко пътуване',
+  tagline: 'Умно опаковане за всяко пътуване',
   subtitle: 'Сметката е наука, не интуиция. Задаваш дните — списъкът се сглобява сам.',
   kpi: { items: 'Предмети', weight: 'Тегло', volume: 'Обем', worn: (kg) => `+${kg} кг облечени` },
   units: { kg: 'кг', l: 'л' },
@@ -430,7 +430,7 @@ const T_BG: Translations = {
     hold: 'Чекиран',
   },
   list: {
-    title: 'Списък за стягане',
+    title: 'Списък за багажа',
     breakdown: (n, c, d) => `${n} предмета · ${c} категории · ${d} дни`,
     pieces: (n) => `${n} бр.`,
     fixedItem: 'Фикс. предмет',
@@ -472,7 +472,7 @@ const T_BG: Translations = {
   },
   warnings: {
     overLimit: (kg, limit, over) => `Багажът тежи ${kg} кг - над лимита ти от ${limit} кг. Извади ${over} кг или избери по-голяма норма.`,
-    overvolume: (l) => `Общият обем е ${l} л — над размера на ръчен багаж, орежи нещо.`,
+    overvolume: (l) => `Общият обем е ${l} л — над размера на ръчен багаж, извади нещо.`,
     overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} е повече от двойно над препоръчаните ${sugg}.`,
     fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} е твърде много за един предмет.`,
     essential0: (emoji, name) => `${emoji} ${name} е на 0 — не може без него!`,
@@ -530,7 +530,7 @@ const T_BG: Translations = {
     'neck-warmer': 'Шал-яка / бъф', 'ski-helmet': 'Ски каска', 'ski-pass': 'Лифт карта',
   },
   pack: {
-    label: 'Прогрес на стягането',
+    label: 'Прогрес на опаковането',
     progress: (n, total) => `${n} / ${total} събрани`,
     allPacked: 'Всичко е събрано — готови сте!',
     clear: 'Изчисти отметките',
@@ -613,8 +613,8 @@ const T_HE: Translations = {
     confirmDelete: 'למחוק את הטיול השמור?',
   },
   warnings: {
-    overLimit: (kg, limit, over) => `התיק שוקל ${kg} ק"ג - מעל המגבלה שלך של ${limit} ק"ג. כדאי להוציא ${over} ק"ג או לבחור מכסה גדולה יותר.`,
-    overvolume: (l) => `הנפח הכולל הוא ${l} ליטר — מעבר לגודל של מזוודת יד, כדאי לצמצם.`,
+    overLimit: (kg, limit, over) => `התיק שוקל ${kg} ק"ג - מעל המגבלה שלך של ${limit} ק"ג. כדאי להוציא ${over} ק"ג או לבחור מגבלה גבוהה יותר.`,
+    overvolume: (l) => `הנפח הכולל הוא ${l} ליטר — מעבר לגודל של כבודת יד, כדאי לצמצם.`,
     overpacked: (emoji, name, qty, sugg) => `${emoji} ${name}: ${qty} — יותר מפי שניים מ-${sugg} המומלצים.`,
     fixedOver: (emoji, name, qty) => `${emoji} ${name}: ${qty} — הרבה מדי לפריט יחיד.`,
     essential0: (emoji, name) => `${emoji} ${name} על 0 — אי אפשר בלי זה!`,
