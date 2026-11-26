@@ -85,7 +85,7 @@ PackMate counts page views and a handful of events with
 - **Events** (`src/analytics.ts`): `share`, `shared_open`, `save`, `load`,
   `first_check`, `five_checks`, `print`, `language_change`, `return_visit`,
   sent as `goatcounter.count({ path: '<host>/event/<name>', event: true })`. Event
-  names are fixed strings; nothing from your list goes into them. Because the
+  names are fixed strings; nothing from your list goes into them.
   path is given as a string, these event paths are not host-prefixed.
   `first_check` and `five_checks` fire at most once per page load.
   `return_visit` fires at most once per browser, for a visit on a later
