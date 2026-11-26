@@ -1,0 +1,35 @@
+# PackMate
+
+> PackMate is a free, browser-based packing list calculator. Set the trip length, trip type, traveler profile and how often you can do laundry; it suggests quantities, adds up the weight and volume of the bag, and checks them against the bag limit you choose.
+
+About this file: it is a plain-text summary offered as a convenience for people and language-model tools. It does not control crawling or indexing, and there is no guarantee that any search engine or AI service reads it or shows PackMate anywhere.
+
+## What it does
+
+- Builds a packing list from trip length (1-21 days), trip type (city, beach/summer, ski/snow, hiking, business), traveler profile (Lean, IT Pro, Prepared) and hygiene profile.
+- Laundry-aware: per-day clothing is suggested for at most one laundry cycle plus a spare (laundry every N days, default 7).
+- Bag check: the user picks a limit (cabin 7, 8 or 10 kg; checked 20 or 23 kg). A backpack (up to 25 L) or carry-on (up to 45 L) is suggested only when both weight and volume fit; the app never treats more than 10 kg as cabin baggage.
+- "Wear it": items worn on the travel day are left out of the bag totals.
+- Check items off while packing, save trips, print, or share a link that reproduces the trip.
+- Languages: English, Hebrew (right-to-left), Russian, Bulgarian.
+
+## What it does not do
+
+- No airline database: it does not know any airline's rules. Users choose their own allowance.
+- No accounts, no backend, no AI-generated lists.
+
+## Data and measurement
+
+- Trips, checkmarks and the language choice are stored in the browser's localStorage on the user's device.
+- Page views and a few named events (for example share, print, save) are counted with GoatCounter without cookies.
+
+## Pages
+
+- English: https://packmate.d85c.com/
+- Hebrew: https://packmate.d85c.com/he/
+- Russian: https://packmate.d85c.com/ru/
+- Bulgarian: https://packmate.d85c.com/bg/
+
+## Source
+
+- https://github.com/d-a-n-i/packmate

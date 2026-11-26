@@ -984,6 +984,10 @@ function App() {
   useEffect(() => {
     document.documentElement.lang = lang
     document.documentElement.dir = dirOf(lang)
+    // The static description under the app (index.html) is in the page's
+    // language; hide it when the UI is showing a different one.
+    const about = document.getElementById('pm-about')
+    if (about) about.hidden = about.lang !== lang
   }, [lang])
 
   const activeItems = useMemo(
@@ -1112,9 +1116,9 @@ function App() {
   const clearPacked = () => setPacked({})
 
   async function shareTrip() {
-    const url =
-      `${window.location.origin}${window.location.pathname}` +
-      `?t=${encodeTrip(trip, lang)}`
+    // The link opens the sender's language entry page; a recipient's own saved
+    // language still wins (see lang.ts).
+    const url = `${window.location.origin}${LANG_PATH[lang]}?t=${encodeTrip(trip)}`
     if (await copyText(url)) {
       track('share')
       setShareStatus('copied')

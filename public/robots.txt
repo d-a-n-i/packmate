@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://packmate.d85c.com/sitemap.xml
